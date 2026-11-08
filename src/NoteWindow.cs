@@ -528,12 +528,6 @@ namespace PersonalStickyNote
         private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, ref Point point);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr window, int message, ref Point point, IntPtr index);
-        [DllImport("user32.dll")]
-        private static extern bool GetUpdateRect(IntPtr window, IntPtr rect, bool erase);
-        [DllImport("user32.dll")]
-        private static extern IntPtr BeginPaint(IntPtr window, out PaintState state);
-        [DllImport("user32.dll")]
-        private static extern bool EndPaint(IntPtr window, ref PaintState state);
 
         [StructLayout(LayoutKind.Sequential)]
         private struct TextRange
@@ -546,14 +540,6 @@ namespace PersonalStickyNote
         private struct CharacterRange
         {
             public int Start, End;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct PaintState
-        {
-            private IntPtr dc;
-            private int erase, left, top, right, bottom, restore, update;
-            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)] private byte[] reserved;
         }
 
         private const int GetCharacterFormat = 0x0400 + 58;
@@ -652,8 +638,6 @@ namespace PersonalStickyNote
         private string paragraphs;
         private int pressedMarker = -1;
         private int hoveredMarker = -1;
-        private BufferedGraphicsContext checklistBuffer;
-        private bool paintChecklist;
 
         private string Paragraphs { get { return paragraphs ?? (paragraphs = Text); } }
 
@@ -803,7 +787,6 @@ namespace PersonalStickyNote
         {
             paragraphs = null;
             hoveredMarker = -1;
-            Invalidate();
             base.OnTextChanged(args);
         }
 
@@ -878,26 +861,6 @@ namespace PersonalStickyNote
         protected override void WndProc(ref Message message)
         {
             int id = message.Msg;
-            if (id == 0x0014 && paintChecklist) // WM_ERASEBKGND, handled in the buffer
-            {
-                message.Result = new IntPtr(1);
-                return;
-            }
-            if (id == 0x000f && ClientSize.Width > 0 && ClientSize.Height > 0 && // WM_PAINT
-                GetUpdateRect(message.HWnd, IntPtr.Zero, false))
-            {
-                if (!imeComposing)
-                {
-                    string text = Paragraphs;
-                    paintChecklist = text.IndexOf(OpenBox) >= 0 || text.IndexOf(CheckedBox) >= 0;
-                }
-                if (paintChecklist)
-                {
-                    PaintBuffered(message.HWnd);
-                    message.Result = IntPtr.Zero;
-                    return;
-                }
-            }
             if (id == 0x010d) imeComposing = true; // WM_IME_STARTCOMPOSITION
             if (!IsImeComposing && (id == 0x0201 || id == 0x0202 || id == 0x0203)) // WM_LBUTTONDOWN, UP, DBLCLK
             {
@@ -931,36 +894,8 @@ namespace PersonalStickyNote
             }
             if (id == 0x0318 && message.WParam != IntPtr.Zero) // WM_PRINTCLIENT
                 using (var canvas = Graphics.FromHdc(message.WParam)) PaintTodoBoxes(canvas);
-        }
-
-        private void PaintBuffered(IntPtr window)
-        {
-            PaintState state;
-            var dc = BeginPaint(window, out state);
-            try
-            {
-                if (dc == IntPtr.Zero) return;
-                if (checklistBuffer == null) checklistBuffer = new BufferedGraphicsContext();
-                var capacity = checklistBuffer.MaximumBuffer;
-                if (capacity.Width <= ClientSize.Width || capacity.Height <= ClientSize.Height)
-                    checklistBuffer.MaximumBuffer = new Size(ClientSize.Width + 1, ClientSize.Height + 1);
-                using (var target = Graphics.FromHdc(dc))
-                using (var buffer = checklistBuffer.Allocate(target, ClientRectangle))
-                {
-                    var canvas = buffer.Graphics;
-                    canvas.Clear(BackColor);
-                    var destination = canvas.GetHdc();
-                    try
-                    {
-                        var print = Message.Create(window, 0x0318, destination, new IntPtr(4)); // WM_PRINTCLIENT, PRF_CLIENT
-                        base.WndProc(ref print);
-                    }
-                    finally { canvas.ReleaseHdc(destination); }
-                    PaintTodoBoxes(canvas);
-                    buffer.Render();
-                }
-            }
-            finally { EndPaint(window, ref state); }
+            if (id == 0x000f && IsHandleCreated) // WM_PAINT after the native body paint
+                using (var canvas = CreateGraphics()) PaintTodoBoxes(canvas);
         }
 
         private void PaintTodoBoxes(Graphics canvas)
@@ -1011,12 +946,6 @@ namespace PersonalStickyNote
                 if (lineEnd < 0) break;
                 start = lineEnd + 1;
             }
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing && checklistBuffer != null) checklistBuffer.Dispose();
-            base.Dispose(disposing);
         }
 
         protected override bool ProcessCmdKey(ref Message message, Keys key)
