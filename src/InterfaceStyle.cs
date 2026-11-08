@@ -34,10 +34,10 @@ namespace PersonalStickyNote
             return path;
         }
 
-        public static Bitmap Icon(Glyph glyph, Color ink)
+        public static Bitmap Icon(Glyph glyph, Color ink, int size)
         {
-            var image = new Bitmap(18, 18);
-            using (var graphics = Graphics.FromImage(image)) Draw(graphics, glyph, ink, new Rectangle(0, 0, 18, 18));
+            var image = new Bitmap(size, size);
+            using (var graphics = Graphics.FromImage(image)) Draw(graphics, glyph, ink, new Rectangle(0, 0, size, size));
             return image;
         }
 

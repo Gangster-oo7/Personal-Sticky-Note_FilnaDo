@@ -81,17 +81,23 @@ namespace PersonalStickyNote
             return button;
         }
 
-        public static void Restore(Form form, WindowPosition position)
+        public static void PlaceOnScreen(Form form, WindowPosition position, bool center)
         {
-            if (position.Width <= 0 || position.Height <= 0) return;
+            // Fit saved screen coordinates after WinForms has scaled the layout to the system DPI.
+            form.PerformAutoScale();
+            bool saved = position.Width > 0 && position.Height > 0;
             var bounds = new Rectangle(position.X, position.Y, position.Width, position.Height);
-            var area = Screen.FromRectangle(bounds).WorkingArea;
-            bounds.Width = Math.Min(area.Width, Math.Max(bounds.Width, form.MinimumSize.Width));
-            bounds.Height = Math.Min(area.Height, Math.Max(bounds.Height, form.MinimumSize.Height));
-            bounds.X = Math.Max(area.Left, Math.Min(bounds.X, area.Right - bounds.Width));
-            bounds.Y = Math.Max(area.Top, Math.Min(bounds.Y, area.Bottom - bounds.Height));
-            form.StartPosition = FormStartPosition.Manual;
-            form.Bounds = bounds;
+            var screen = saved ? Screen.FromRectangle(bounds) : Screen.FromPoint(Cursor.Position);
+            var area = screen.WorkingArea;
+            var minimum = new Size(Math.Min(area.Width, form.MinimumSize.Width),
+                Math.Min(area.Height, form.MinimumSize.Height));
+            if (form.MinimumSize != minimum) form.MinimumSize = minimum;
+            if (!saved)
+            {
+                bounds = NotePlacement.InitialBounds(area, form.Size, minimum);
+                if (!center && area.Contains(form.Location)) bounds.Location = form.Location;
+            }
+            form.Bounds = NotePlacement.Fit(bounds, area, minimum);
         }
 
         public static void Remember(Form form, WindowPosition position, NoteSession session)

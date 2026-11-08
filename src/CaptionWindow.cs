@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -93,6 +94,17 @@ namespace PersonalStickyNote
                 Region = new Region(path);
         }
         protected virtual void OnMoveCompleted() { }
+
+        protected void SnapToDesktop(IEnumerable<Rectangle> neighbors)
+        {
+            if (WindowState != FormWindowState.Normal) return;
+            using (var graphics = CreateGraphics())
+            {
+                float scale = graphics.DpiX / 96f;
+                Location = NotePlacement.Snap(Bounds, Screen.FromControl(this).WorkingArea,
+                    neighbors, (int)Math.Round(18 * scale), (int)Math.Round(8 * scale));
+            }
+        }
 
         protected void PresentMenu(ContextMenuStrip menu, Control anchor, Point point)
         {

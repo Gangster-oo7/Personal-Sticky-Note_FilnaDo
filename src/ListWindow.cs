@@ -35,15 +35,16 @@ namespace PersonalStickyNote
 
         public ListWindow(NoteSession session)
         {
+            SuspendLayout();
             this.session = session;
             Text = Program.Name;
             Icon = NoteStyle.AppIcon;
             Font = new Font("Microsoft YaHei UI", 10);
-            Size = new Size(416, 570);
+            Size = new Size(440, 620);
             MinimumSize = new Size(330, 320);
             StartPosition = FormStartPosition.CenterScreen;
-            AutoScaleMode = AutoScaleMode.Dpi;
             AutoScaleDimensions = new SizeF(96, 96);
+            AutoScaleMode = AutoScaleMode.Dpi;
             TopMost = session.Book.ListPinned;
 
             layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1,
@@ -108,7 +109,7 @@ namespace PersonalStickyNote
             notes.DragOver += DragOverNote;
             notes.DragLeave += (sender, args) => ClearDropMark();
             notes.DragDrop += DropNote;
-            NoteStyle.Restore(this, session.Book.ListPosition);
+            Load += (sender, args) => NoteStyle.PlaceOnScreen(this, session.Book.ListPosition, center: true);
             LocationChanged += (sender, args) => RememberPosition();
             SizeChanged += (sender, args) => RememberPosition();
             Shown += (sender, args) =>
@@ -119,7 +120,10 @@ namespace PersonalStickyNote
             };
             ApplyTheme();
             RefreshNotes();
+            ResumeLayout(false);
         }
+
+        protected override void OnMoveCompleted() { SnapToDesktop(session.OtherWindowBounds(this)); }
 
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr handle, int message, IntPtr parameter, string text);

@@ -11,7 +11,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.5.3.0")]
+[assembly: System.Reflection.AssemblyVersion("1.5.4.0")]
 
 namespace PersonalStickyNote
 {
@@ -217,9 +217,9 @@ namespace PersonalStickyNote
             list.FocusSearch();
         }
 
-        public IEnumerable<Rectangle> OtherNoteBounds(NoteWindow except)
+        public IEnumerable<Rectangle> OtherWindowBounds(CaptionWindow except)
         {
-            return windows.Values.Where(window => window != except && window.Visible &&
+            return windows.Values.Cast<CaptionWindow>().Concat(new[] { list }).Where(window => window != except && window.Visible &&
                 window.WindowState == FormWindowState.Normal).Select(window => window.Bounds);
         }
 
@@ -228,7 +228,7 @@ namespace PersonalStickyNote
         public void ConfigurePalette()
         {
             ShowList(openNotebook: false);
-            using (var dialog = new PaletteDialog(list, Book))
+            using (var dialog = new PaletteDialog(list, Book, Dark))
             {
                 if (dialog.ShowDialog(list) != DialogResult.OK) return;
                 dialog.Save();

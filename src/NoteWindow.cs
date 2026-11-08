@@ -13,11 +13,13 @@ namespace PersonalStickyNote
 {
     internal sealed class NoteWindow : CaptionWindow
     {
+        private const int ToolbarIconSize = 24;
         private readonly NoteSession session;
         private readonly RichEditor editor = new RichEditor();
         private readonly Panel page = new Panel();
         private readonly ToolStrip toolbar = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden,
             CanOverflow = true, Padding = new Padding(6, 3, 6, 3), TabStop = true,
+            ImageScalingSize = new Size(ToolbarIconSize, ToolbarIconSize),
             Renderer = new EditorStripRenderer(), AccessibleName = "便笺编辑工具" };
         private readonly System.Collections.Generic.Dictionary<ToolStripButton, Glyph> icons =
             new System.Collections.Generic.Dictionary<ToolStripButton, Glyph>();
@@ -31,6 +33,7 @@ namespace PersonalStickyNote
 
         public NoteWindow(NoteSession session, Note note) : base(showIcon: false)
         {
+            SuspendLayout();
             this.session = session;
             Note = note;
             Text = Program.Name + "·便笺";
@@ -38,8 +41,8 @@ namespace PersonalStickyNote
             Font = new Font("Microsoft YaHei UI", 10);
             Size = new Size(528, 356);
             MinimumSize = new Size(326, 238);
-            AutoScaleMode = AutoScaleMode.Dpi;
             AutoScaleDimensions = new SizeF(96, 96);
+            AutoScaleMode = AutoScaleMode.Dpi;
             TopMost = note.Pinned;
             PinShortcut = session.Shortcuts.Label(ShortcutAction.Pin);
 
@@ -71,7 +74,7 @@ namespace PersonalStickyNote
             page.Dock = DockStyle.Fill;
             page.Controls.Add(editor);
 
-            toolbar.Font = Font;
+            toolbar.Font = new Font(Font.FontFamily, 12);
             add = Tool("新建便笺", () => session.NewNote(Note.GroupId), Glyph.Add, true);
             ink = Tool("文字颜色", OpenInkMenu, essential: true);
             ink.DisplayStyle = ToolStripItemDisplayStyle.Image;
@@ -84,10 +87,10 @@ namespace PersonalStickyNote
                 Tool("S", () => Format(8)),
                 Tool("≡", ToggleBullet)
             };
-            formats[0].Font = new Font(Font, FontStyle.Bold);
-            formats[1].Font = new Font(Font, FontStyle.Italic);
-            formats[2].Font = new Font(Font, FontStyle.Underline);
-            formats[3].Font = new Font(Font, FontStyle.Strikeout);
+            formats[0].Font = new Font(toolbar.Font, FontStyle.Bold);
+            formats[1].Font = new Font(toolbar.Font, FontStyle.Italic);
+            formats[2].Font = new Font(toolbar.Font, FontStyle.Underline);
+            formats[3].Font = new Font(toolbar.Font, FontStyle.Strikeout);
             todo = Tool("待办列表", editor.ToggleTodoList, Glyph.Todo, true);
             var image = Tool("插入图片", PickImage, Glyph.Image);
             snap = Tool("磁吸", () => { Note.Snap = !Note.Snap; RefreshSnap(); session.Changed(); }, Glyph.Magnet, true);
@@ -105,10 +108,21 @@ namespace PersonalStickyNote
             editor.SelectionChanged += (sender, args) => { if (!styling) RefreshTools(); };
             editor.CompositionEnded += (sender, args) => RefreshTools();
             InstallEditorMenu();
-            NoteStyle.Restore(this, note.Position);
+            Load += (sender, args) =>
+            {
+                NoteStyle.PlaceOnScreen(this, note.Position, center: false);
+                using (var graphics = CreateGraphics())
+                {
+                    int size = (int)Math.Round(ToolbarIconSize * graphics.DpiX / 96f);
+                    toolbar.ImageScalingSize = new Size(size, size);
+                }
+                RefreshToolbarIcons(toolbar.BackColor, ink.ForeColor);
+                RefreshTools();
+            };
             Shown += (sender, args) => { editor.Focus(); RefreshTools(); };
             LocationChanged += (sender, args) => RememberPosition();
             SizeChanged += (sender, args) => RememberPosition();
+            ResumeLayout(false);
         }
 
         private void RefreshSnap()
@@ -120,21 +134,14 @@ namespace PersonalStickyNote
 
         protected override void OnMoveCompleted()
         {
-            if (Note.Snap && WindowState == FormWindowState.Normal)
-            {
-                using (var graphics = CreateGraphics())
-                {
-                    float scale = graphics.DpiX / 96f;
-                    Location = NotePlacement.Snap(Bounds, Screen.FromControl(this).WorkingArea,
-                        session.OtherNoteBounds(this), (int)Math.Round(18 * scale), (int)Math.Round(8 * scale));
-                }
-            }
+            if (Note.Snap) SnapToDesktop(session.OtherWindowBounds(this));
         }
 
         private ToolStripButton Tool(string label, Action action, Glyph? icon = null, bool essential = false)
         {
             var button = new ToolStripButton(label) { AccessibleName = label, ToolTipText = label,
                 DisplayStyle = icon.HasValue ? ToolStripItemDisplayStyle.Image : ToolStripItemDisplayStyle.Text,
+                ImageScaling = ToolStripItemImageScaling.None,
                 Overflow = essential ? ToolStripItemOverflow.Never : ToolStripItemOverflow.AsNeeded,
                 Padding = new Padding(1, 4, 1, 4) };
             if (icon.HasValue) icons.Add(button, icon.Value);
@@ -188,16 +195,22 @@ namespace PersonalStickyNote
                 session.Changed();
             }
             foreach (ToolStripItem item in toolbar.Items) item.ForeColor = foreground;
+            RefreshToolbarIcons(background, foreground);
+            StyleCaption(surface, NoteStyle.Contrast(surface));
+            RefreshSnap();
+            RefreshTools();
+        }
+
+        private void RefreshToolbarIcons(Color background, Color foreground)
+        {
             foreach (var pair in icons)
             {
                 var previous = pair.Key.Image;
                 pair.Key.Image = InterfaceStyle.Icon(pair.Value,
-                    pair.Value == Glyph.Add ? InterfaceStyle.Accent(background) : foreground);
+                    pair.Value == Glyph.Add ? InterfaceStyle.Accent(background) : foreground,
+                    toolbar.ImageScalingSize.Height);
                 if (previous != null) previous.Dispose();
             }
-            StyleCaption(surface, NoteStyle.Contrast(surface));
-            RefreshSnap();
-            RefreshTools();
         }
 
         private void RefreshTools()

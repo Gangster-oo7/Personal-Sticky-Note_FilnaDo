@@ -6,6 +6,24 @@ namespace PersonalStickyNote
 {
     internal static class NotePlacement
     {
+        public static Rectangle InitialBounds(Rectangle desktop, Size preferred, Size minimum)
+        {
+            var size = new Size(Math.Min(preferred.Width, desktop.Width * 42 / 100),
+                Math.Min(preferred.Height, desktop.Height * 70 / 100));
+            var bounds = Fit(new Rectangle(desktop.Location, size), desktop, minimum);
+            bounds.Offset((desktop.Width - bounds.Width) / 2, (desktop.Height - bounds.Height) / 2);
+            return bounds;
+        }
+
+        public static Rectangle Fit(Rectangle bounds, Rectangle desktop, Size minimum)
+        {
+            bounds.Width = Math.Min(desktop.Width, Math.Max(bounds.Width, minimum.Width));
+            bounds.Height = Math.Min(desktop.Height, Math.Max(bounds.Height, minimum.Height));
+            bounds.X = Math.Max(desktop.Left, Math.Min(bounds.X, desktop.Right - bounds.Width));
+            bounds.Y = Math.Max(desktop.Top, Math.Min(bounds.Y, desktop.Bottom - bounds.Height));
+            return bounds;
+        }
+
         public static Point Snap(Rectangle note, Rectangle desktop, IEnumerable<Rectangle> neighbors, int range, int gap)
         {
             int x = note.Left, y = note.Top;
