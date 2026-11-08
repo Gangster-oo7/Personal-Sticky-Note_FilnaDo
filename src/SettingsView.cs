@@ -11,9 +11,9 @@ namespace PersonalStickyNote
             FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true,
             Padding = new Padding(0, 8, 0, 0) };
         private readonly ShortcutEditor shortcuts;
-        private readonly SoftButton generalTab = (SoftButton)NoteStyle.Button("常规", 66);
-        private readonly SoftButton shortcutTab = (SoftButton)NoteStyle.Button("快捷键", 76);
-        private readonly Button back = NoteStyle.Button("‹  返回列表", 108);
+        private readonly SoftButton generalTab = (SoftButton)NoteStyle.Button(L.T("常规"), 66);
+        private readonly SoftButton shortcutTab = (SoftButton)NoteStyle.Button(L.T("快捷键"), 76);
+        private readonly Button back = NoteStyle.Button("‹ " + L.T("返回列表"), 92);
         private readonly Label version = new Label { AutoSize = true };
 
         public SettingsView(NoteSession session, ListWindow owner)
@@ -25,12 +25,12 @@ namespace PersonalStickyNote
             back.Click += (sender, args) => owner.ShowNotebook();
             generalTab.Click += (sender, args) => OpenTab(false);
             shortcutTab.Click += (sender, args) => OpenTab(true);
-            var appearance = new FlowLayoutPanel { Width = 250, Height = 32, WrapContents = false };
-            appearance.Controls.Add(new Label { Text = "外观", Width = 61, Height = 25,
+            var appearance = new FlowLayoutPanel { Width = 290, Height = 32, WrapContents = false };
+            appearance.Controls.Add(new Label { Text = L.T("外观"), AutoSize = true, MinimumSize = new Size(61, 25),
                 TextAlign = ContentAlignment.MiddleLeft });
-            var theme = new ComboBox { Width = 140, DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "外观" };
+            var theme = new ComboBox { Width = 165, DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = L.T("外观") };
             string[] values = { "system", "light", "dark" };
-            theme.Items.AddRange(new[] { "跟随系统", "浅色", "深色" });
+            theme.Items.AddRange(new[] { L.T("跟随系统"), L.T("浅色"), L.T("深色") });
             theme.SelectedIndex = Math.Max(0, Array.IndexOf(values, session.Book.Theme));
             theme.SelectionChangeCommitted += (sender, args) =>
             {
@@ -39,29 +39,29 @@ namespace PersonalStickyNote
             };
             appearance.Controls.Add(theme);
             general.Controls.Add(appearance);
-            AddButton("默认配色…", session.ConfigurePalette);
-            var confirm = new CheckBox { Text = "删除前确认", AutoSize = true, Checked = session.Book.ConfirmDelete,
+            AddButton(L.T("默认配色…"), session.ConfigurePalette);
+            var confirm = new CheckBox { Text = L.T("删除前确认"), AutoSize = true, Checked = session.Book.ConfirmDelete,
                 Margin = new Padding(3, 8, 3, 4) };
             confirm.CheckedChanged += (sender, args) => { session.Book.ConfirmDelete = confirm.Checked; session.Changed(); };
             general.Controls.Add(confirm);
-            var startup = new CheckBox { Text = "登录 Windows 后自动启动", AutoSize = true, AutoCheck = false,
+            var startup = new CheckBox { Text = L.T("登录 Windows 后自动启动"), AutoSize = true, AutoCheck = false,
                 Checked = DesktopIntegration.StartsWithWindows, Margin = new Padding(3, 4, 3, 8) };
             startup.Click += (sender, args) =>
             {
                 bool enabled = !DesktopIntegration.StartsWithWindows;
-                if (!enabled || owner.Confirm("允许个人便签在登录 Windows 后自动显示列表和已置顶的便笺吗？"))
+                if (!enabled || owner.Confirm(L.T("允许个人便签在登录 Windows 后自动显示列表和已置顶的便笺吗？")))
                     owner.TryDesktopAction(() => DesktopIntegration.SetStartup(enabled));
                 startup.Checked = DesktopIntegration.StartsWithWindows;
             };
             general.Controls.Add(startup);
-            AddButton("创建桌面快捷方式", () => owner.TryDesktopAction(() =>
+            AddButton(L.T("创建桌面快捷方式"), () => owner.TryDesktopAction(() =>
             {
                 DesktopIntegration.CreateDesktopShortcut();
-                session.Notify("已创建桌面快捷方式。");
+                session.Notify(L.T("已创建桌面快捷方式。"));
             }));
-            AddButton("检查更新…", session.CheckForUpdates);
-            AddButton("GitHub 更新访问…", () => session.Updates.ConfigureAccess(owner));
-            version.Text = "版本 " + AppUpdates.DisplayVersion;
+            AddButton(L.T("检查更新…"), session.CheckForUpdates);
+            AddButton(L.T("GitHub 更新访问…"), () => session.Updates.ConfigureAccess(owner));
+            version.Text = L.T("版本 {0}", AppUpdates.DisplayVersion);
             version.Margin = new Padding(3, 10, 3, 3);
             general.Controls.Add(version);
             shortcuts = new ShortcutEditor(session);

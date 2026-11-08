@@ -5,7 +5,7 @@ using System.Windows.Forms;
 
 namespace PersonalStickyNote
 {
-    internal enum Glyph { Pin, Magnet, Add, More, Todo, Image, Minimize, Maximize, Restore, Close }
+    internal enum Glyph { Pin, Magnet, Add, More, Todo, Image, Globe, Minimize, Maximize, Restore, Close }
 
     internal static class InterfaceStyle
     {
@@ -101,6 +101,11 @@ namespace PersonalStickyNote
                         graphics.DrawRectangle(pen, -7, -5, 14, 11);
                         graphics.DrawEllipse(pen, 1, -3, 2, 2);
                         graphics.DrawLines(pen, new[] { new Point(-6,4), new Point(-2,0), new Point(1,3), new Point(3,1), new Point(6,4) });
+                        break;
+                    case Glyph.Globe:
+                        graphics.DrawEllipse(pen, -7, -7, 14, 14);
+                        graphics.DrawEllipse(pen, -3, -7, 6, 14);
+                        graphics.DrawLine(pen, -7, 0, 7, 0);
                         break;
                     case Glyph.Minimize: graphics.DrawLine(pen, -5, 0, 5, 0); break;
                     case Glyph.Maximize: graphics.DrawRectangle(pen, -5, -5, 10, 10); break;

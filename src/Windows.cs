@@ -7,13 +7,15 @@ namespace PersonalStickyNote
 {
     internal sealed class Paper
     {
-        public readonly string Id, Label;
+        public readonly string Id;
+        private readonly string label;
+        public string Label { get { return L.T(label); } }
         public readonly Color Light, Dark, Accent;
 
         public Paper(string id, string label, int light, int dark, int accent)
         {
             Id = id;
-            Label = label;
+            this.label = label;
             Light = NoteStyle.ColorFrom(light);
             Dark = NoteStyle.ColorFrom(dark);
             Accent = NoteStyle.ColorFrom(accent);
@@ -78,6 +80,12 @@ namespace PersonalStickyNote
                 AccessibleName = description ?? text, Cursor = Cursors.Hand
             };
             button.FlatAppearance.BorderSize = 0;
+            if (text.Length != 0)
+            {
+                button.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+                button.MinimumSize = new Size(width, 30);
+                button.AutoSize = true;
+            }
             return button;
         }
 

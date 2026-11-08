@@ -13,10 +13,10 @@ namespace PersonalStickyNote
             TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(4, 0, 0, 0),
             AutoEllipsis = true };
         private readonly PictureBox icon;
-        private readonly SoftButton pin = (SoftButton)NoteStyle.Button("", 35, "置顶");
-        private readonly SoftButton minimize = (SoftButton)NoteStyle.Button("", 34, "最小化");
-        private readonly SoftButton maximize = (SoftButton)NoteStyle.Button("", 34, "最大化");
-        private readonly SoftButton close = (SoftButton)NoteStyle.Button("", 34, "关闭");
+        private readonly SoftButton pin = (SoftButton)NoteStyle.Button("", 35, L.T("置顶"));
+        private readonly SoftButton minimize = (SoftButton)NoteStyle.Button("", 34, L.T("最小化"));
+        private readonly SoftButton maximize = (SoftButton)NoteStyle.Button("", 34, L.T("最大化"));
+        private readonly SoftButton close = (SoftButton)NoteStyle.Button("", 34, L.T("关闭"));
         private readonly ToolTip tips = new ToolTip();
         private Color captionInk;
         private Rectangle normalBounds;
@@ -72,11 +72,19 @@ namespace PersonalStickyNote
             };
             maximize.Click += (sender, args) => ToggleMaximize();
             close.Click += (sender, args) => Close();
-            tips.SetToolTip(minimize, "最小化");
-            tips.SetToolTip(close, "关闭");
             captionText.MouseDown += StartCaptionDrag;
             TextChanged += (sender, args) => captionText.Text = Text;
             SizeChanged += (sender, args) => RefreshMaximize();
+            ApplyCaptionLanguage();
+        }
+
+        protected void SetCaptionToolTip(Control control, string text) { tips.SetToolTip(control, text); }
+
+        protected void ApplyCaptionLanguage()
+        {
+            if (icon != null) icon.AccessibleName = Program.Name;
+            tips.SetToolTip(minimize, minimize.AccessibleName = L.T("最小化"));
+            tips.SetToolTip(close, close.AccessibleName = L.T("关闭"));
             RefreshMaximize();
         }
 
@@ -158,13 +166,13 @@ namespace PersonalStickyNote
 
         protected void RefreshPin()
         {
-            pin.AccessibleName = TopMost ? "取消置顶" : "窗口置顶";
+            pin.AccessibleName = TopMost ? L.T("取消置顶") : L.T("窗口置顶");
             pin.Selected = TopMost;
             pin.BackColor = TopMost ? InterfaceStyle.Blend(caption.BackColor, NoteStyle.ColorFrom(0x399c78), 0.19f)
                 : caption.BackColor;
             pin.ForeColor = captionInk;
             pin.Invalidate();
-            tips.SetToolTip(pin, pin.AccessibleName + "（" + PinShortcut + "）");
+            tips.SetToolTip(pin, L.T("{0}（{1}）", pin.AccessibleName, PinShortcut));
         }
 
         private void ToggleMaximize()
@@ -188,7 +196,7 @@ namespace PersonalStickyNote
             bool maximized = WindowState == FormWindowState.Maximized;
             maximize.Symbol = maximized ? Glyph.Restore : Glyph.Maximize;
             maximize.Invalidate();
-            maximize.AccessibleName = maximized ? "还原窗口" : "最大化";
+            maximize.AccessibleName = maximized ? L.T("还原窗口") : L.T("最大化");
             tips.SetToolTip(maximize, maximize.AccessibleName);
         }
 

@@ -11,7 +11,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.5.5.0")]
+[assembly: System.Reflection.AssemblyVersion("1.6.0.0")]
 
 namespace PersonalStickyNote
 {
@@ -19,7 +19,8 @@ namespace PersonalStickyNote
 
     internal static class Program
     {
-        public const string Name = "个人便签";
+        public const string ProductName = "个人便签";
+        public static string Name { get { return L.T(ProductName); } }
 
         [DllImport("user32.dll")]
         private static extern bool SetProcessDPIAware();
@@ -31,8 +32,15 @@ namespace PersonalStickyNote
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            string directory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "PersonalStickyNote");
+            var store = new NoteStore(directory);
             if (args.Length == 3 && args[0] == "--apply-update")
             {
+                try { L.Use(store.Load().Language); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+                catch (InvalidOperationException) { }
                 AppUpdates.Apply(args[1], args[2]);
                 return;
             }
@@ -48,23 +56,20 @@ namespace PersonalStickyNote
                 }
                 try
                 {
-                    string directory = Path.Combine(
-                        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                        "PersonalStickyNote");
-                    using (var session = new NoteSession(new NoteStore(directory), mode))
+                    using (var session = new NoteSession(store, mode))
                     using (var activation = new ListActivationWindow(() => session.ShowList()))
                     {
                         if (updated)
                         {
                             AppUpdates.ConfirmLaunch(args[1]);
-                            session.Notify("已更新到版本 " + AppUpdates.DisplayVersion + "。");
+                            session.Notify(L.T("已更新到版本 {0}。", AppUpdates.DisplayVersion));
                         }
                         Application.Run(session);
                     }
                 }
                 catch (Exception error)
                 {
-                    if (!updated) MessageBox.Show("无法打开个人便签。\n\n" + error.Message,
+                    if (!updated) MessageBox.Show(L.T("无法打开个人便签。\n\n") + error.Message,
                         Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 finally { instance.ReleaseMutex(); }
@@ -80,7 +85,7 @@ namespace PersonalStickyNote
                 if (silent || ListActivationWindow.RequestList()) return false;
                 Thread.Sleep(100);
             }
-            MessageBox.Show("个人便签已在运行。请从任务栏切换。如果正在运行旧版，请先退出旧版。",
+            MessageBox.Show(L.T("个人便签已在运行。请从任务栏切换。如果正在运行旧版，请先退出旧版。"),
                 Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return false;
         }
@@ -104,6 +109,8 @@ namespace PersonalStickyNote
         {
             this.store = store;
             Book = store.Load();
+            Book.Language = L.Normalize(Book.Language);
+            L.Use(Book.Language);
             Shortcuts = new ShortcutMap(Book);
             Dark = IsDark();
             list = new ListWindow(this);
@@ -119,7 +126,7 @@ namespace PersonalStickyNote
             foreach (var note in restore) Open(note, false);
             if (mode == LaunchMode.Manual) ShowList();
             if (store.Recovered)
-                MessageBox.Show(list, "已从上次保存的备份恢复便签。", Program.Name);
+                MessageBox.Show(list, L.T("已从上次保存的备份恢复便签。"), Program.Name);
         }
 
         public void NewNote(Guid groupId = default(Guid))
@@ -244,6 +251,16 @@ namespace PersonalStickyNote
 
         public void CheckForUpdates() { Updates.Check(list); }
 
+        public void SetLanguage(string preference)
+        {
+            Book.Language = L.Normalize(preference);
+            L.Use(Book.Language);
+            list.ApplyLanguage();
+            foreach (var window in windows.Values) window.ApplyLanguage();
+            tray.ApplyLanguage();
+            Changed();
+        }
+
         public void ShortcutsChanged()
         {
             list.RefreshShortcutLabels();
@@ -282,7 +299,7 @@ namespace PersonalStickyNote
 
         public void Rename(Note note, Form owner)
         {
-            var title = TextPrompt.Ask(owner, "便笺名称", "名称（留空时显示正文预览）", note.Title, 64, null);
+            var title = TextPrompt.Ask(owner, L.T("便笺名称"), L.T("名称（留空时显示正文预览）"), note.Title, 64, null);
             if (title == null || title == note.Title) return;
             note.Title = title;
             note.Updated = DateTime.UtcNow;
@@ -292,7 +309,7 @@ namespace PersonalStickyNote
 
         public void Delete(Note note, Form owner)
         {
-            if (Book.ConfirmDelete && MessageBox.Show(owner, "要永久删除这条便签吗？",
+            if (Book.ConfirmDelete && MessageBox.Show(owner, L.T("要永久删除这条便签吗？"),
                 Program.Name, MessageBoxButtons.YesNo, MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button2) != DialogResult.Yes) return;
 
@@ -364,14 +381,14 @@ namespace PersonalStickyNote
             {
                 store.Save(Book);
                 dirty = false;
-                list.SetSaveError("");
+                list.SetSaveError(false);
                 return true;
             }
             catch (Exception error)
             {
-                list.SetSaveError("保存失败，编辑后会重试");
+                list.SetSaveError(true);
                 if (interactive)
-                    MessageBox.Show(Form.ActiveForm, "保存失败，请检查本地存储后重试。\n\n" +
+                    MessageBox.Show(Form.ActiveForm, L.T("保存失败，请检查本地存储后重试。\n\n") +
                         error.Message, Program.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return false;
             }

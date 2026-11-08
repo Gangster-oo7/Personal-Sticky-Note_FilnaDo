@@ -36,7 +36,7 @@ namespace PersonalStickyNote
 
         public async void Check(Form owner)
         {
-            if (checking) { session.Notify("正在检查更新。"); return; }
+            if (checking) { session.Notify(L.T("正在检查更新。")); return; }
             checking = true;
             try
             {
@@ -52,11 +52,11 @@ namespace PersonalStickyNote
                 if (owner.IsDisposed) return;
                 if (manifest.ReleaseVersion <= Current)
                 {
-                    session.Notify("当前已是最新版本 " + DisplayVersion + "。");
+                    session.Notify(L.T("当前已是最新版本 {0}。", DisplayVersion));
                     return;
                 }
-                if (MessageBox.Show(owner, "发现版本 " + manifest.ReleaseVersion.ToString(3) +
-                    "。更新会先保存便笺，再重启程序。现在更新吗？", Program.Name,
+                if (MessageBox.Show(owner, L.T("发现版本 {0}。更新会先保存便笺，再重启程序。现在更新吗？",
+                    manifest.ReleaseVersion.ToString(3)), Program.Name,
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                     return;
 
@@ -67,7 +67,7 @@ namespace PersonalStickyNote
             catch (Exception error)
             {
                 if (!owner.IsDisposed)
-                    MessageBox.Show(owner, "更新未完成。\n\n" + error.Message, Program.Name,
+                    MessageBox.Show(owner, L.T("更新未完成。\n\n") + error.Message, Program.Name,
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
             finally { checking = false; }
@@ -75,20 +75,19 @@ namespace PersonalStickyNote
 
         public bool ConfigureAccess(Form owner)
         {
-            using (var dialog = new Form { Text = "GitHub 更新访问", Font = owner.Font,
-                ClientSize = new Size(440, 190), StartPosition = FormStartPosition.CenterParent,
+            using (var dialog = new Form { Text = L.T("GitHub 更新访问"), Font = owner.Font,
+                ClientSize = new Size(470, 215), StartPosition = FormStartPosition.CenterParent,
                 FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
                 ShowInTaskbar = false, AutoScaleDimensions = new SizeF(96, 96), AutoScaleMode = AutoScaleMode.Dpi })
             {
-                var help = new Label { Text = "检查私有仓库需要 GitHub 细粒度令牌。\n仅授权 " +
-                    "Personal-Sticky-Note_FilnaDo 的 Contents 读取权限。\n凭据加密保存在当前 Windows 账户。",
-                    Location = new Point(14, 12), Size = new Size(410, 70) };
-                var input = new TextBox { UseSystemPasswordChar = true, Width = 410, MaxLength = 256,
-                    Location = new Point(14, 88), AccessibleName = "GitHub 只读令牌" };
-                var clear = new Button { Text = "清除凭据", Location = new Point(14, 139), Size = new Size(99, 30),
+                var help = new Label { Text = L.T("检查私有仓库需要 GitHub 细粒度令牌。仅授权此仓库的 Contents 读取权限。凭据加密保存在当前 Windows 账户。"),
+                    Location = new Point(14, 12), Size = new Size(442, 105) };
+                var input = new TextBox { UseSystemPasswordChar = true, Width = 442, MaxLength = 256,
+                    Location = new Point(14, 119), AccessibleName = L.T("GitHub 只读令牌") };
+                var clear = new Button { Text = L.T("清除凭据"), Location = new Point(14, 166), Size = new Size(173, 34),
                     Enabled = File.Exists(tokenFile) };
-                var save = new Button { Text = "保存", Location = new Point(262, 139), Size = new Size(76, 30) };
-                var cancel = new Button { Text = "取消", Location = new Point(347, 139), Size = new Size(76, 30),
+                var save = new Button { Text = L.T("保存"), Location = new Point(254, 166), Size = new Size(99, 34) };
+                var cancel = new Button { Text = L.T("取消"), Location = new Point(357, 166), Size = new Size(99, 34),
                     DialogResult = DialogResult.Cancel };
                 clear.Click += (sender, args) => SaveAccess(dialog, "");
                 save.Click += (sender, args) =>
@@ -96,7 +95,7 @@ namespace PersonalStickyNote
                     string token = input.Text.Trim();
                     if (!token.StartsWith("github_pat_", StringComparison.Ordinal) || !IsToken(token))
                     {
-                        MessageBox.Show(dialog, "请输入 GitHub 细粒度令牌（github_pat_ 开头）。", dialog.Text);
+                        MessageBox.Show(dialog, L.T("请输入 GitHub 细粒度令牌（github_pat_ 开头）。"), dialog.Text);
                         return;
                     }
                     SaveAccess(dialog, token);
@@ -133,7 +132,7 @@ namespace PersonalStickyNote
                 }
                 dialog.DialogResult = DialogResult.OK;
             }
-            catch (Exception error) { MessageBox.Show(dialog, "无法保存更新凭据。\n\n" + error.Message, dialog.Text); }
+            catch (Exception error) { MessageBox.Show(dialog, L.T("无法保存更新凭据。\n\n") + error.Message, dialog.Text); }
         }
 
         private string ReadToken()
@@ -156,7 +155,7 @@ namespace PersonalStickyNote
             if (manifest == null || !Version.TryParse(manifest.version, out version) ||
                 version.Revision < 0 || !IsHex(manifest.sha256, 64) || !IsHex(manifest.blob, 40) ||
                 manifest.size <= 0 || manifest.size > MaximumExe)
-                throw new InvalidDataException("仓库版本清单无效。");
+                throw new InvalidDataException(L.T("仓库版本清单无效。"));
             manifest.ReleaseVersion = version;
             return manifest;
         }
@@ -168,7 +167,7 @@ namespace PersonalStickyNote
             {
                 var actual = BitConverter.ToString(sha.ComputeHash(binary)).Replace("-", "");
                 if (binary.Length != manifest.size || !string.Equals(actual, manifest.sha256, StringComparison.OrdinalIgnoreCase))
-                    throw new InvalidDataException("更新文件校验失败。");
+                    throw new InvalidDataException(L.T("更新文件校验失败。"));
             }
             return binary;
         }
@@ -192,7 +191,7 @@ namespace PersonalStickyNote
                     int read;
                     while ((read = input.Read(buffer, 0, buffer.Length)) != 0)
                     {
-                        if (output.Length + read > MaximumJson) throw new InvalidDataException("更新响应超出大小限制。");
+                        if (output.Length + read > MaximumJson) throw new InvalidDataException(L.T("更新响应超出大小限制。"));
                         output.Write(buffer, 0, read);
                     }
                     return new JavaScriptSerializer { MaxJsonLength = MaximumJson }
@@ -205,16 +204,16 @@ namespace PersonalStickyNote
                 {
                     if (response != null && (response.StatusCode == HttpStatusCode.Unauthorized ||
                         response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == HttpStatusCode.NotFound))
-                        throw new IOException("无法读取私有仓库中的更新。请检查「GitHub 更新访问」中的令牌权限或有效期。");
+                        throw new IOException(L.T("无法读取私有仓库中的更新。请检查「GitHub 更新访问」中的令牌权限或有效期。"));
                 }
-                throw new IOException("连接 GitHub 失败，请稍后重试。");
+                throw new IOException(L.T("连接 GitHub 失败，请稍后重试。"));
             }
         }
 
         private static byte[] DecodeBlob(GitBlob blob)
         {
             if (blob == null || blob.encoding != "base64" || string.IsNullOrEmpty(blob.content))
-                throw new InvalidDataException("GitHub 未返回完整的更新内容。");
+                throw new InvalidDataException(L.T("GitHub 未返回完整的更新内容。"));
             return Convert.FromBase64String(blob.content);
         }
 
@@ -241,7 +240,7 @@ namespace PersonalStickyNote
                 using (var process = Start(helper, "--apply-update " + Process.GetCurrentProcess().Id + " \"" +
                     Path.GetFileName(target) + "\""))
                 {
-                    if (process == null) throw new IOException("无法启动更新程序。");
+                    if (process == null) throw new IOException(L.T("无法启动更新程序。"));
                 }
             }
             catch
@@ -255,7 +254,7 @@ namespace PersonalStickyNote
         {
             var assembly = AssemblyName.GetAssemblyName(path);
             if (assembly.Name != "PersonalStickyNote" || assembly.Version != expected)
-                throw new InvalidDataException("更新程序的版本与仓库清单不符。");
+                throw new InvalidDataException(L.T("更新程序的版本与仓库清单不符。"));
         }
 
         internal static void SwapFiles(string target, string staged, string backup)
@@ -286,14 +285,14 @@ namespace PersonalStickyNote
                 var current = AssemblyName.GetAssemblyName(target).Version;
                 var newer = AssemblyName.GetAssemblyName(staged).Version;
                 VerifyExecutable(staged, newer);
-                if (newer <= current) throw new IOException("更新版本没有高于当前版本。");
+                if (newer <= current) throw new IOException(L.T("更新版本没有高于当前版本。"));
                 using (var ready = new EventWaitHandle(false, EventResetMode.ManualReset, EventName(id.ToString("N"))))
                 {
                     SwapFiles(target, staged, backup);
                     swapped = true;
                     using (var child = Start(target, "--updated " + id.ToString("N")))
                     {
-                        if (child == null) throw new IOException("无法启动新版。");
+                        if (child == null) throw new IOException(L.T("无法启动新版。"));
                         for (int attempt = 0; attempt < 150; attempt++)
                         {
                             if (ready.WaitOne(100))
@@ -302,10 +301,10 @@ namespace PersonalStickyNote
                                 File.WriteAllText(Path.Combine(stage, "complete"), "");
                                 return;
                             }
-                            if (child.HasExited) throw new IOException("新版未能启动。");
+                            if (child.HasExited) throw new IOException(L.T("新版未能启动。"));
                         }
                         canRestore = false;
-                        throw new IOException("新版仍在启动，旧版 EXE 已留在更新目录中。");
+                        throw new IOException(L.T("新版仍在启动，旧版 EXE 已留在更新目录中。"));
                     }
                 }
             }
@@ -317,11 +316,11 @@ namespace PersonalStickyNote
                     try
                     {
                         SwapFiles(target, backup, null);
-                        result += "\n已恢复旧版本。";
+                        result += L.T("\n已恢复旧版本。");
                     }
-                    catch (Exception rollback) { result += "\n旧版程序保留在 " + backup + "\n" + rollback.Message; }
+                    catch (Exception rollback) { result += L.T("\n旧版程序保留在 {0}", backup) + "\n" + rollback.Message; }
                 }
-                MessageBox.Show("更新未完成。\n\n" + result, Program.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(L.T("更新未完成。\n\n") + result, Program.Name, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 if (canRestore && File.Exists(target))
                 {
                     try { using (var old = Start(target, DesktopIntegration.StartupArgument)) { } }
@@ -336,7 +335,7 @@ namespace PersonalStickyNote
             try { previous = Process.GetProcessById(processId); }
             catch (ArgumentException) { return; }
             using (previous)
-                if (!previous.WaitForExit(20000)) throw new IOException("旧版窗口尚未退出，请关闭后重试。");
+                if (!previous.WaitForExit(20000)) throw new IOException(L.T("旧版窗口尚未退出，请关闭后重试。"));
         }
 
         private static Process Start(string file, string arguments)

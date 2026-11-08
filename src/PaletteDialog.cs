@@ -8,7 +8,7 @@ namespace PersonalStickyNote
     internal sealed class PaletteDialog : Form
     {
         private readonly Notebook book;
-        private readonly CheckBox share = new CheckBox { Text = "列表和新便笺使用同一色系", AutoSize = true };
+        private readonly CheckBox share = new CheckBox { Text = L.T("列表和新便笺使用同一色系"), AutoSize = true };
         private readonly PaletteRow list;
         private readonly PaletteRow note;
 
@@ -16,7 +16,7 @@ namespace PersonalStickyNote
         {
             SuspendLayout();
             this.book = book;
-            Text = "默认配色";
+            Text = L.T("默认配色");
             Font = owner.Font;
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -29,15 +29,15 @@ namespace PersonalStickyNote
                 AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, RowCount = 4, ColumnCount = 1 };
             for (int row = 0; row < layout.RowCount; row++) layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             share.Checked = book.SharedPaper;
-            list = new PaletteRow(this, "便签列表", book.ListPaper, book.ListCustomColor, dark);
-            note = new PaletteRow(this, "新便笺", book.NewNotePaper, book.NewNoteCustomColor, dark);
+            list = new PaletteRow(this, L.T("便签列表"), book.ListPaper, book.ListCustomColor, dark);
+            note = new PaletteRow(this, L.T("新便笺"), book.NewNotePaper, book.NewNoteCustomColor, dark);
             share.CheckedChanged += (sender, args) => RefreshPreviews();
             list.ColorChanged += RefreshPreviews;
             note.ColorChanged += RefreshPreviews;
             var buttons = new FlowLayoutPanel { Anchor = AnchorStyles.Right, AutoSize = true,
                 AutoSizeMode = AutoSizeMode.GrowAndShrink, WrapContents = false, Margin = new Padding(0, 10, 0, 0) };
-            var save = DialogButton("保存", DialogResult.OK);
-            var cancel = DialogButton("取消", DialogResult.Cancel);
+            var save = DialogButton(L.T("保存"), DialogResult.OK);
+            var cancel = DialogButton(L.T("取消"), DialogResult.Cancel);
             buttons.Controls.AddRange(new Control[] { save, cancel });
             layout.Controls.Add(share, 0, 0);
             layout.Controls.Add(list, 0, 1);
@@ -74,10 +74,10 @@ namespace PersonalStickyNote
         private sealed class PaletteRow : FlowLayoutPanel
         {
             private static readonly Paper[] Papers = new[] { NoteStyle.Neutral }.Concat(NoteStyle.Papers).ToArray();
-            private readonly ComboBox choice = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 92 };
+            private readonly ComboBox choice = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
             private readonly Label swatch = new Label { MinimumSize = new Size(96, 34), AutoSize = true,
                 BorderStyle = BorderStyle.FixedSingle, TextAlign = ContentAlignment.MiddleCenter };
-            private readonly Button pick = new Button { Text = "调色盘…", AutoSize = true, MinimumSize = new Size(85, 34) };
+            private readonly Button pick = new Button { Text = L.T("调色盘…"), AutoSize = true, MinimumSize = new Size(85, 34) };
             private readonly bool dark;
             public event Action ColorChanged;
             public string Paper { get; private set; }
@@ -90,10 +90,10 @@ namespace PersonalStickyNote
                 AutoSize = true;
                 AutoSizeMode = AutoSizeMode.GrowAndShrink;
                 WrapContents = false;
-                Controls.Add(new Label { Text = label, Size = new Size(80, 34),
+                Controls.Add(new Label { Text = label, AutoSize = true, MinimumSize = new Size(97, 34),
                     TextAlign = ContentAlignment.MiddleLeft });
                 choice.Items.AddRange(Papers.Select(item => item.Label).ToArray());
-                choice.AccessibleName = label + "色系";
+                choice.AccessibleName = L.T("{0}色系", label);
                 choice.SelectedIndex = Math.Max(0, Array.FindIndex(Papers, item => item.Id == paper));
                 Paper = Papers[choice.SelectedIndex].Id;
                 if (custom != 0) SetCustomColor(custom);
@@ -115,7 +115,7 @@ namespace PersonalStickyNote
                             ColorChanged();
                         }
                 };
-                swatch.AccessibleName = label + "颜色预览";
+                swatch.AccessibleName = L.T("{0}颜色预览", label);
                 Controls.AddRange(new Control[] { choice, pick, swatch });
                 foreach (Control control in Controls) control.Anchor = AnchorStyles.None;
             }
@@ -123,7 +123,7 @@ namespace PersonalStickyNote
             private void SetCustomColor(int color)
             {
                 Custom = color;
-                if (choice.Items.Count == Papers.Length) choice.Items.Add("自定义");
+                if (choice.Items.Count == Papers.Length) choice.Items.Add(L.T("自定义"));
                 choice.SelectedIndex = Papers.Length;
             }
 

@@ -25,14 +25,14 @@ namespace PersonalStickyNote
 
         public static void CreateDesktopShortcut()
         {
-            WriteShortcut(ShortcutPath(Environment.SpecialFolder.DesktopDirectory, Program.Name + ".lnk"),
+            WriteShortcut(ShortcutPath(Environment.SpecialFolder.DesktopDirectory, Program.ProductName + ".lnk"),
                 Application.ExecutablePath, "");
         }
 
         private static string ShortcutPath(Environment.SpecialFolder folder, string file)
         {
             var directory = Environment.GetFolderPath(folder, Environment.SpecialFolderOption.DoNotVerify);
-            if (string.IsNullOrEmpty(directory)) throw new IOException("无法找到 Windows 快捷方式目录。");
+            if (string.IsNullOrEmpty(directory)) throw new IOException(L.T("无法找到 Windows 快捷方式目录。"));
             return Path.Combine(directory, file);
         }
 
@@ -47,7 +47,7 @@ namespace PersonalStickyNote
                 {
                     if (File.Exists(path) && !string.Equals(Path.GetFileName((string)link.TargetPath),
                         Path.GetFileName(executable), StringComparison.OrdinalIgnoreCase))
-                        throw new IOException("已有同名快捷方式。请先将它改名，再创建个人便签的快捷方式。");
+                        throw new IOException(L.T("已有同名快捷方式。请先将它改名，再创建个人便签的快捷方式。"));
                     link.TargetPath = executable;
                     link.WorkingDirectory = Path.GetDirectoryName(executable);
                     link.Arguments = arguments;

@@ -14,10 +14,10 @@ namespace PersonalStickyNote
             AddAction("新建便笺", ShortcutAction.New, session.Shortcuts, () => session.NewNote());
             AddAction("搜索便笺", ShortcutAction.Search, session.Shortcuts, session.SearchNotes);
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("设置", null, (sender, args) => list.OpenSettings());
-            menu.Items.Add("检查更新…", null, (sender, args) => session.CheckForUpdates());
+            AddItem("设置", () => list.OpenSettings());
+            AddItem("检查更新…", session.CheckForUpdates);
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("退出", null, (sender, args) => session.Quit());
+            AddItem("退出", () => session.Quit());
 
             icon = new NotifyIcon { Icon = NoteStyle.AppIcon, Text = Program.Name + " " + AppUpdates.DisplayVersion,
                 ContextMenuStrip = menu, Visible = true };
@@ -29,10 +29,24 @@ namespace PersonalStickyNote
 
         private void AddAction(string label, ShortcutAction shortcut, ShortcutMap shortcuts, Action action)
         {
-            var item = new ToolStripMenuItem(label) { ShortcutKeyDisplayString = shortcuts.Label(shortcut) };
-            item.Click += (sender, args) => action();
+            var item = AddItem(label, action);
+            item.ShortcutKeyDisplayString = shortcuts.Label(shortcut);
             menu.Opening += (sender, args) => item.ShortcutKeyDisplayString = shortcuts.Label(shortcut);
+        }
+
+        private ToolStripMenuItem AddItem(string label, Action action)
+        {
+            var item = new ToolStripMenuItem(L.T(label)) { Tag = label };
+            item.Click += (sender, args) => action();
             menu.Items.Add(item);
+            return item;
+        }
+
+        public void ApplyLanguage()
+        {
+            icon.Text = Program.Name + " " + AppUpdates.DisplayVersion;
+            foreach (ToolStripItem item in menu.Items)
+                if (item.Tag is string) item.Text = L.T((string)item.Tag);
         }
 
         public void Notify(string message)

@@ -43,6 +43,7 @@ namespace PersonalStickyNote
     public sealed class Notebook
     {
         public string Theme = "system";
+        public string Language = L.SystemLanguage;
         public bool ConfirmDelete = true;
         public bool ListVisible = true;
         public bool ListPinned;

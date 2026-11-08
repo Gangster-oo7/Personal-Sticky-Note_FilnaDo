@@ -23,12 +23,13 @@ namespace PersonalStickyNote
         internal sealed class Command
         {
             public readonly ShortcutAction Action;
-            public readonly string Label;
+            private readonly string label;
+            public string Label { get { return L.T(label); } }
             public readonly Keys Default;
             public readonly bool EditorOnly;
             public Command(ShortcutAction action, string label, Keys key, bool editorOnly = false)
             {
-                Action = action; Label = label; Default = key; EditorOnly = editorOnly;
+                Action = action; this.label = label; Default = key; EditorOnly = editorOnly;
             }
         }
 
@@ -119,10 +120,10 @@ namespace PersonalStickyNote
             bool number = code >= Keys.D0 && code <= Keys.D9;
             bool function = code >= Keys.F1 && code <= Keys.F12;
             if ((key & (Keys.Control | Keys.Alt)) == 0 || !(letter || number || function || code == Keys.Tab))
-                return "请使用 Ctrl 或 Alt，加上字母、数字、Tab 或 F1–F12。";
+                return L.T("请使用 Ctrl 或 Alt，加上字母、数字、Tab 或 F1–F12。");
             if (((key & Keys.Modifiers) == Keys.Control && new[] { Keys.A, Keys.C, Keys.X, Keys.V }.Contains(code)) ||
                 ((key & Keys.Alt) != 0 && (code == Keys.F4 || code == Keys.Tab)))
-                return "这个组合键保留给 Windows 或基本编辑操作。";
+                return L.T("这个组合键保留给 Windows 或基本编辑操作。");
             return null;
         }
     }
@@ -132,7 +133,7 @@ namespace PersonalStickyNote
         private readonly NoteSession session;
         private Dictionary<ShortcutAction, Keys> working;
         private readonly Dictionary<ShortcutAction, KeyBox> boxes = new Dictionary<ShortcutAction, KeyBox>();
-        private readonly Label status = new Label { Dock = DockStyle.Bottom, Height = 28, TextAlign = ContentAlignment.MiddleLeft };
+        private readonly Label status = new Label { Dock = DockStyle.Bottom, Height = 44, TextAlign = ContentAlignment.MiddleLeft };
 
         public ShortcutEditor(NoteSession session)
         {
@@ -140,18 +141,18 @@ namespace PersonalStickyNote
             Dock = DockStyle.Fill;
             Padding = new Padding(14, 10, 14, 10);
             working = session.Shortcuts.Copy();
-            var hint = new Label { Text = "点按组合键框后输入新组合。快捷键在个人便签窗口中生效。",
-                Dock = DockStyle.Top, Height = 36, TextAlign = ContentAlignment.MiddleLeft };
+            var hint = new Label { Text = L.T("点按组合键框后输入新组合。快捷键在个人便签窗口中生效。"),
+                Dock = DockStyle.Top, Height = 54, TextAlign = ContentAlignment.MiddleLeft };
             var scroll = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
             var rows = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
             rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 47));
             rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 53));
             foreach (var command in ShortcutMap.Commands)
             {
-                var label = new Label { Text = command.Label, Dock = DockStyle.Fill, Height = 28,
+                var label = new Label { Text = command.Label, Dock = DockStyle.Fill, Height = 40,
                     TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(2, 1, 0, 4) };
                 var box = new KeyBox { Text = ShortcutMap.Format(working[command.Action]), Dock = DockStyle.Fill,
-                    ReadOnly = true, AccessibleName = command.Label + "的快捷键", Margin = new Padding(4, 1, 12, 5) };
+                    ReadOnly = true, AccessibleName = L.T("{0}的快捷键", command.Label), Margin = new Padding(4, 1, 12, 5) };
                 box.Record = key => Assign(command.Action, key);
                 boxes.Add(command.Action, box);
                 rows.Controls.Add(label);
@@ -159,19 +160,19 @@ namespace PersonalStickyNote
             }
             scroll.Controls.Add(rows);
             var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 39 };
-            var save = NoteStyle.Button("保存快捷键", 110);
-            var reset = NoteStyle.Button("恢复默认", 94);
+            var save = NoteStyle.Button(L.T("保存快捷键"), 110);
+            var reset = NoteStyle.Button(L.T("恢复默认"), 94);
             save.Click += (sender, args) =>
             {
                 session.Shortcuts.Save(working);
                 session.ShortcutsChanged();
-                status.Text = "快捷键已保存。";
+                status.Text = L.T("快捷键已保存。");
             };
             reset.Click += (sender, args) =>
             {
                 working = ShortcutMap.Defaults();
                 foreach (var pair in boxes) pair.Value.Text = ShortcutMap.Format(working[pair.Key]);
-                status.Text = "已填入默认值，点击「保存快捷键」后生效。";
+                status.Text = L.T("已填入默认值，点击「保存快捷键」后生效。");
             };
             buttons.Controls.AddRange(new Control[] { save, reset });
             Controls.Add(scroll);
@@ -196,10 +197,10 @@ namespace PersonalStickyNote
             if (error != null) { status.Text = error; return; }
             var conflict = ShortcutMap.Commands.FirstOrDefault(command => command.Action != action &&
                 working[command.Action] == key);
-            if (conflict != null) { status.Text = "此组合键已用于「" + conflict.Label + "」。"; return; }
+            if (conflict != null) { status.Text = L.T("此组合键已用于「{0}」。", conflict.Label); return; }
             working[action] = key;
             boxes[action].Text = ShortcutMap.Format(key);
-            status.Text = "点击「保存快捷键」使修改生效。";
+            status.Text = L.T("点击「保存快捷键」使修改生效。");
         }
 
         private sealed class KeyBox : TextBox

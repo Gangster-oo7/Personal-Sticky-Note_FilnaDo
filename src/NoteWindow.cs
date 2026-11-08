@@ -20,7 +20,7 @@ namespace PersonalStickyNote
         private readonly ToolStrip toolbar = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden,
             CanOverflow = true, Padding = new Padding(6, 3, 6, 3), TabStop = true,
             ImageScalingSize = new Size(ToolbarIconSize, ToolbarIconSize),
-            Renderer = new EditorStripRenderer(), AccessibleName = "便笺编辑工具" };
+            Renderer = new EditorStripRenderer(), AccessibleName = L.T("便笺编辑工具") };
         private readonly System.Collections.Generic.Dictionary<ToolStripButton, Glyph> icons =
             new System.Collections.Generic.Dictionary<ToolStripButton, Glyph>();
         private readonly ToolStripButton[] formats;
@@ -36,7 +36,6 @@ namespace PersonalStickyNote
             SuspendLayout();
             this.session = session;
             Note = note;
-            Text = Program.Name + "·便笺";
             Icon = NoteStyle.AppIcon;
             Font = new Font("Microsoft YaHei UI", 10);
             Size = new Size(528, 356);
@@ -48,7 +47,6 @@ namespace PersonalStickyNote
 
             editor.BorderStyle = BorderStyle.None;
             editor.Dock = DockStyle.Fill;
-            editor.AccessibleName = "便笺正文";
             editor.ScrollBars = RichTextBoxScrollBars.Vertical;
             editor.DetectUrls = true;
             editor.HideSelection = false;
@@ -67,7 +65,7 @@ namespace PersonalStickyNote
                     (url.Scheme == Uri.UriSchemeHttps || url.Scheme == Uri.UriSchemeHttp))
                 {
                     try { System.Diagnostics.Process.Start(url.AbsoluteUri); }
-                    catch (System.ComponentModel.Win32Exception error) { ShowError("无法打开链接", error); }
+                    catch (System.ComponentModel.Win32Exception error) { ShowError(L.T("无法打开链接"), error); }
                 }
             };
             page.Padding = new Padding(17, 14, 12, 9);
@@ -97,17 +95,16 @@ namespace PersonalStickyNote
             more = Tool("更多操作", OpenMenu, Glyph.More, true);
             toolbar.Items.AddRange(new ToolStripItem[] { add,
                 formats[0], formats[1], formats[2], formats[3], ink, formats[4], todo, image, snap, more });
-            RefreshShortcutLabels();
             Controls.Add(page);
             Controls.Add(toolbar);
             InstallCaption();
 
+            ApplyLanguage();
             ApplyTheme();
             editor.ClearUndo();
             editor.TextChanged += (sender, args) => { if (!styling) Edited(); };
             editor.SelectionChanged += (sender, args) => { if (!styling) RefreshTools(); };
             editor.CompositionEnded += (sender, args) => RefreshTools();
-            InstallEditorMenu();
             Load += (sender, args) =>
             {
                 NoteStyle.PlaceOnScreen(this, note.Position, center: false);
@@ -125,10 +122,23 @@ namespace PersonalStickyNote
             ResumeLayout(false);
         }
 
+        public void ApplyLanguage()
+        {
+            Text = L.T("个人便签·便笺");
+            toolbar.AccessibleName = L.T("便笺编辑工具");
+            editor.AccessibleName = L.T("便笺正文");
+            foreach (ToolStripButton button in toolbar.Items)
+                button.Text = button.AccessibleName = button.ToolTipText = L.T((string)button.Tag);
+            ApplyCaptionLanguage();
+            RefreshShortcutLabels();
+            RefreshSnap();
+            InstallEditorMenu();
+        }
+
         private void RefreshSnap()
         {
             snap.Checked = Note.Snap;
-            snap.AccessibleName = Note.Snap ? "关闭磁吸" : "开启磁吸";
+            snap.AccessibleName = Note.Snap ? L.T("关闭磁吸") : L.T("开启磁吸");
             snap.ToolTipText = snap.AccessibleName;
         }
 
@@ -139,7 +149,7 @@ namespace PersonalStickyNote
 
         private ToolStripButton Tool(string label, Action action, Glyph? icon = null, bool essential = false)
         {
-            var button = new ToolStripButton(label) { AccessibleName = label, ToolTipText = label,
+            var button = new ToolStripButton { Tag = label,
                 DisplayStyle = icon.HasValue ? ToolStripItemDisplayStyle.Image : ToolStripItemDisplayStyle.Text,
                 ImageScaling = ToolStripItemImageScaling.None,
                 Overflow = essential ? ToolStripItemOverflow.Never : ToolStripItemOverflow.AsNeeded,
@@ -152,15 +162,15 @@ namespace PersonalStickyNote
         private void Describe(ToolStripButton item, string label, ShortcutAction action)
         {
             item.AccessibleName = label;
-            item.ToolTipText = label + "（" + session.Shortcuts.Label(action) + "）";
+            item.ToolTipText = L.T("{0}（{1}）", label, session.Shortcuts.Label(action));
         }
 
         public void RefreshShortcutLabels()
         {
             PinShortcut = session.Shortcuts.Label(ShortcutAction.Pin);
             RefreshPin();
-            Describe(add, "新建便笺", ShortcutAction.New);
-            Describe(todo, "切换待办列表", ShortcutAction.Todo);
+            Describe(add, L.T("新建便笺"), ShortcutAction.New);
+            Describe(todo, L.T("切换待办列表"), ShortcutAction.Todo);
             var actions = new[] { ShortcutAction.Bold, ShortcutAction.Italic, ShortcutAction.Underline,
                 ShortcutAction.Strike, ShortcutAction.Bullet };
             for (int i = 0; i < formats.Length; i++)
@@ -260,18 +270,18 @@ namespace PersonalStickyNote
         private void OpenMenu()
         {
             var menu = new ContextMenuStrip();
-            menu.Items.Add(Note.Title.Length == 0 ? "命名便笺…" : "重命名便笺…", null,
+            menu.Items.Add(Note.Title.Length == 0 ? L.T("命名便笺…") : L.T("重命名便笺…"), null,
                 (sender, args) => session.Rename(Note, this));
-            menu.Items.Add("手写或涂画", null, (sender, args) => Sketch());
-            menu.Items.Add("便笺列表", null, (sender, args) => session.ShowList());
+            menu.Items.Add(L.T("手写或涂画"), null, (sender, args) => Sketch());
+            menu.Items.Add(L.T("便笺列表"), null, (sender, args) => session.ShowList());
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("删除便笺", null, (sender, args) => session.Delete(Note, this));
+            menu.Items.Add(L.T("删除便笺"), null, (sender, args) => session.Delete(Note, this));
             ShowMenu(menu, more);
         }
 
         private ToolStripMenuItem BackgroundMenu()
         {
-            var colors = new ToolStripMenuItem("便笺背景");
+            var colors = new ToolStripMenuItem(L.T("便笺背景"));
             foreach (var paper in new[] { NoteStyle.Neutral }.Concat(NoteStyle.Papers))
             {
                 var item = new ToolStripMenuItem(paper.Label) { Checked = Note.CustomBackground == 0 && Note.Color == paper.Id };
@@ -284,7 +294,7 @@ namespace PersonalStickyNote
                 colors.DropDownItems.Add(item);
             }
             colors.DropDownItems.Add(new ToolStripSeparator());
-            colors.DropDownItems.Add("自定义背景…", null, (sender, args) =>
+            colors.DropDownItems.Add(L.T("自定义背景…"), null, (sender, args) =>
                 PickColor(editor.BackColor, selected => SetBackground(selected.ToArgb())));
             return colors;
         }
@@ -306,8 +316,8 @@ namespace PersonalStickyNote
         private void OpenInkMenu()
         {
             var menu = new ContextMenuStrip();
-            menu.Items.Add("默认文字颜色", null, (sender, args) => ApplyTextColor(Color.FromArgb(Note.DefaultInk)));
-            string[] names = { "黑色", "白色", "红色", "橙色", "绿色", "蓝色", "紫色" };
+            menu.Items.Add(L.T("默认文字颜色"), null, (sender, args) => ApplyTextColor(Color.FromArgb(Note.DefaultInk)));
+            string[] names = { L.T("黑色"), L.T("白色"), L.T("红色"), L.T("橙色"), L.T("绿色"), L.T("蓝色"), L.T("紫色") };
             int[] colors = { 0x000000, 0xffffff, 0xca3038, 0xbe591a, 0x297347, 0x225fc2, 0x7841ac };
             for (int i = 0; i < names.Length; i++)
             {
@@ -318,7 +328,7 @@ namespace PersonalStickyNote
                 menu.Items.Add(item);
             }
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("自定义文字颜色…", null, (sender, args) =>
+            menu.Items.Add(L.T("自定义文字颜色…"), null, (sender, args) =>
                 PickColor(editor.SelectionColor.IsEmpty ? Color.FromArgb(Note.DefaultInk) : editor.SelectionColor, ApplyTextColor));
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add(BackgroundMenu());
@@ -345,29 +355,31 @@ namespace PersonalStickyNote
         private void InstallEditorMenu()
         {
             var menu = new ContextMenuStrip();
-            menu.Items.Add("撤销", null, (sender, args) => UndoEdit(false));
-            menu.Items.Add("重做", null, (sender, args) => UndoEdit(true));
+            menu.Items.Add(L.T("撤销"), null, (sender, args) => UndoEdit(false));
+            menu.Items.Add(L.T("重做"), null, (sender, args) => UndoEdit(true));
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("剪切", null, (sender, args) => editor.Cut());
-            menu.Items.Add("复制", null, (sender, args) => editor.Copy());
-            menu.Items.Add("粘贴", null, (sender, args) => editor.PasteWithMarkdown(false));
-            menu.Items.Add("删除所选内容", null, (sender, args) => editor.SelectedText = "");
-            menu.Items.Add("全选", null, (sender, args) => editor.SelectAll());
+            menu.Items.Add(L.T("剪切"), null, (sender, args) => editor.Cut());
+            menu.Items.Add(L.T("复制"), null, (sender, args) => editor.Copy());
+            menu.Items.Add(L.T("粘贴"), null, (sender, args) => editor.PasteWithMarkdown(false));
+            menu.Items.Add(L.T("删除所选内容"), null, (sender, args) => editor.SelectedText = "");
+            menu.Items.Add(L.T("全选"), null, (sender, args) => editor.SelectAll());
             menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("粘贴 Markdown 待办", null, (sender, args) => editor.PasteWithMarkdown(true));
+            menu.Items.Add(L.T("粘贴 Markdown 待办"), null, (sender, args) => editor.PasteWithMarkdown(true));
             menu.Opening += (sender, args) =>
             {
                 menu.Items[0].Enabled = editor.CanUndo;
                 menu.Items[1].Enabled = editor.CanRedo;
                 menu.Items[3].Enabled = menu.Items[4].Enabled = menu.Items[6].Enabled = editor.SelectionLength != 0;
             };
+            var previous = editor.ContextMenuStrip;
             editor.ContextMenuStrip = menu;
+            if (previous != null) previous.Dispose();
         }
 
         private void PickImage()
         {
-            using (var picker = new OpenFileDialog { Title = "插入图片",
-                Filter = "图片|*.png;*.jpg;*.jpeg;*.gif;*.bmp|所有文件|*.*" })
+            using (var picker = new OpenFileDialog { Title = L.T("插入图片"),
+                Filter = L.T("图片") + "|*.png;*.jpg;*.jpeg;*.gif;*.bmp|" + L.T("所有文件") + "|*.*" })
             {
                 if (picker.ShowDialog(this) != DialogResult.OK) return;
                 try
@@ -375,7 +387,7 @@ namespace PersonalStickyNote
                     using (var image = Image.FromFile(picker.FileName))
                         InsertImage(image);
                 }
-                catch (Exception error) { ShowError("无法插入图片", error); }
+                catch (Exception error) { ShowError(L.T("无法插入图片"), error); }
             }
         }
 
@@ -781,15 +793,15 @@ namespace PersonalStickyNote
         {
             int start = LineStart(Paragraphs, GetCharIndexFromPosition(point));
             if (!IsTodo(Paragraphs, start)) return -1;
-            var marker = MarkerArea(start);
+            var marker = MarkerArea(Paragraphs, start);
             marker.Width = Math.Min(marker.Width, Font.Height + 4);
             return marker.Contains(point) ? start : -1;
         }
 
-        private Rectangle MarkerArea(int start)
+        private Rectangle MarkerArea(string text, int start)
         {
             Point origin = GetPositionFromCharIndex(start);
-            int content = start + MarkerLength(Paragraphs, start);
+            int content = start + MarkerLength(text, start);
             Point next = GetPositionFromCharIndex(content);
             int width = next.Y == origin.Y && next.X > origin.X
                 ? next.X - origin.X : GetPositionFromCharIndex(content - 1).X - origin.X + Font.Height / 2;
@@ -827,6 +839,7 @@ namespace PersonalStickyNote
             }
             if (id == 0x0215) pressedMarker = -1; // WM_CAPTURECHANGED
             base.WndProc(ref message);
+            if (imeComposing && (id == 0x010d || id == 0x010f)) Invalidate(); // Native IME redraw
             if (imeComposing && (id == 0x010e || id == 0x0008)) // WM_IME_ENDCOMPOSITION / WM_KILLFOCUS
             {
                 imeComposing = false;
@@ -834,15 +847,16 @@ namespace PersonalStickyNote
                 var ended = CompositionEnded;
                 if (ended != null) ended(this, EventArgs.Empty);
             }
-            if (id == 0x000f && IsHandleCreated && !IsImeComposing) // WM_PAINT
+            if (id == 0x000f && IsHandleCreated) // WM_PAINT
                 using (var canvas = CreateGraphics()) PaintTodoBoxes(canvas);
-            if (id == 0x0318 && message.WParam != IntPtr.Zero && !IsImeComposing) // WM_PRINTCLIENT
+            if (id == 0x0318 && message.WParam != IntPtr.Zero) // WM_PRINTCLIENT
                 using (var canvas = Graphics.FromHdc(message.WParam)) PaintTodoBoxes(canvas);
         }
 
         private void PaintTodoBoxes(Graphics canvas)
         {
-            string text = Paragraphs;
+            // Composition can change the live layout without raising TextChanged.
+            string text = IsImeComposing ? Text : Paragraphs;
             if (text.Length == 0 || ClientSize.Height <= 0) return;
             int first = LineStart(text, GetCharIndexFromPosition(Point.Empty));
             int last = GetCharIndexFromPosition(new Point(0, ClientSize.Height - 1));
@@ -854,7 +868,7 @@ namespace PersonalStickyNote
             {
                 if (IsTodo(text, start))
                 {
-                    Rectangle area = MarkerArea(start);
+                    Rectangle area = MarkerArea(text, start);
                     if (area.Width >= 9 && area.IntersectsWith(ClientRectangle))
                     {
                         bool selected = start >= selectionStart && start < selectionEnd;
@@ -953,12 +967,12 @@ namespace PersonalStickyNote
     {
         private readonly PictureBox canvas = new PictureBox();
         private Point? previous;
-        private readonly Button insert = NoteStyle.Button("插入便签", 95);
+        private readonly Button insert = NoteStyle.Button(L.T("插入便签"), 95);
         public Bitmap Image { get; private set; }
 
         public SketchWindow()
         {
-            Text = "手写或涂画";
+            Text = L.T("手写或涂画");
             StartPosition = FormStartPosition.CenterParent;
             ClientSize = new Size(440, 300);
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -968,10 +982,10 @@ namespace PersonalStickyNote
             canvas.Dock = DockStyle.Fill;
             canvas.Cursor = Cursors.Cross;
             var actions = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 49, Padding = new Padding(8) };
-            var clear = NoteStyle.Button("清空", 70);
+            var clear = NoteStyle.Button(L.T("清空"), 70);
             clear.Click += (sender, args) => Clear();
             insert.DialogResult = DialogResult.OK;
-            var cancel = NoteStyle.Button("取消", 70);
+            var cancel = NoteStyle.Button(L.T("取消"), 70);
             cancel.DialogResult = DialogResult.Cancel;
             CancelButton = cancel;
             actions.Controls.AddRange(new Control[] { insert, clear, cancel });

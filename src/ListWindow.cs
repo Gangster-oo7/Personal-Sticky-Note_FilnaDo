@@ -15,18 +15,19 @@ namespace PersonalStickyNote
         private readonly TreeView notes = new PreviewTreeView { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
             HideSelection = false, FullRowSelect = true, ShowLines = false, AllowDrop = true,
             ShowPlusMinus = false, ShowRootLines = false, DrawMode = TreeViewDrawMode.OwnerDrawAll,
-            AccessibleName = "便笺和分组" };
-        private readonly TextBox search = new TextBox { Dock = DockStyle.Top, AccessibleName = "搜索便笺" };
+            AccessibleName = L.T("便笺和分组") };
+        private readonly TextBox search = new TextBox { Dock = DockStyle.Top, AccessibleName = L.T("搜索便笺") };
         private readonly Panel searchFrame = new Panel { Dock = DockStyle.Fill,
             Padding = new Padding(9, 6, 9, 0), Margin = new Padding(0, 0, 0, 8) };
         private readonly Label footer = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
-        private readonly Label heading = new Label { Text = "便笺", Dock = DockStyle.Fill,
+        private readonly Label heading = new Label { Dock = DockStyle.Fill, AutoEllipsis = true,
             TextAlign = ContentAlignment.MiddleLeft };
-        private readonly Button create = NoteStyle.Button("＋  新建便笺", 124);
-        private readonly Button settings = NoteStyle.Button("设置", 62);
+        private readonly Button create = NoteStyle.Button(L.T("新建便笺"), 100);
+        private readonly Button settings = NoteStyle.Button(L.T("设置"), 62);
+        private readonly SoftButton language = (SoftButton)NoteStyle.Button("", 35);
         private readonly TableLayoutPanel layout;
         private SettingsView settingsView;
-        private string saveError = "";
+        private bool saveError;
         private string[] rendered = new string[0];
         private bool refreshing;
         private Note dragging;
@@ -41,7 +42,7 @@ namespace PersonalStickyNote
             Icon = NoteStyle.AppIcon;
             Font = new Font("Microsoft YaHei UI", 10);
             Size = new Size(440, 620);
-            MinimumSize = new Size(330, 320);
+            MinimumSize = new Size(356, 320);
             StartPosition = FormStartPosition.CenterScreen;
             AutoScaleDimensions = new SizeF(96, 96);
             AutoScaleMode = AutoScaleMode.Dpi;
@@ -49,19 +50,22 @@ namespace PersonalStickyNote
 
             layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1,
                 Padding = new Padding(14, 12, 14, 5) };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             var top = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
             heading.Font = new Font(Font.FontFamily, 15, FontStyle.Bold);
-            var actions = new FlowLayoutPanel { Dock = DockStyle.Right, WrapContents = false, Width = 195,
+            var actions = new FlowLayoutPanel { Dock = DockStyle.Right, WrapContents = false, AutoSize = true,
                 FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 0) };
-            actions.Controls.AddRange(new Control[] { settings, create });
+            language.Symbol = Glyph.Globe;
+            actions.Controls.AddRange(new Control[] { language, settings, create });
             top.Controls.Add(heading);
             top.Controls.Add(actions);
             create.Click += (sender, args) => NewNote(SelectedGroup);
             settings.Click += (sender, args) => OpenSettings();
+            language.Click += (sender, args) => OpenLanguageMenu();
             layout.Controls.Add(top, 0, 0);
             search.BorderStyle = BorderStyle.None;
             searchFrame.Controls.Add(search);
@@ -119,8 +123,40 @@ namespace PersonalStickyNote
                     notes.ItemHeight = (int)Math.Round(34 * graphics.DpiY / 96f);
             };
             ApplyTheme();
-            RefreshNotes();
+            ApplyLanguage();
             ResumeLayout(false);
+        }
+
+        public void ApplyLanguage()
+        {
+            Text = Program.Name;
+            heading.Text = L.T("便笺");
+            create.AccessibleName = L.T("新建便笺");
+            create.Text = "＋ " + create.AccessibleName;
+            settings.Text = settings.AccessibleName = L.T("设置");
+            language.AccessibleName = L.T("切换语言");
+            notes.AccessibleName = L.T("便笺和分组");
+            search.AccessibleName = L.T("搜索便笺");
+            SetCaptionToolTip(language, language.AccessibleName);
+            ApplyCaptionLanguage();
+            RefreshShortcutLabels();
+            RefreshNotes();
+        }
+
+        private void OpenLanguageMenu()
+        {
+            var menu = new ContextMenuStrip();
+            AddLanguageChoice(menu, L.SystemLanguage, L.T("跟随系统"));
+            menu.Items.Add(new ToolStripSeparator());
+            for (int i = 0; i < L.Codes.Length; i++) AddLanguageChoice(menu, L.Codes[i], L.Names[i]);
+            ShowMenu(menu, language, new Point(0, language.Height));
+        }
+
+        private void AddLanguageChoice(ContextMenuStrip menu, string code, string name)
+        {
+            var option = new ToolStripMenuItem(name) { Checked = session.Book.Language == code };
+            option.Click += (sender, args) => session.SetLanguage(code);
+            menu.Items.Add(option);
         }
 
         protected override void OnMoveCompleted() { SnapToDesktop(session.OtherWindowBounds(this)); }
@@ -153,7 +189,7 @@ namespace PersonalStickyNote
                 ? InterfaceStyle.Blend(BackColor, NoteStyle.GetPaper(session.Book.ListPaper).Accent, 0.58f)
                 : InterfaceStyle.Blend(BackColor, ForeColor, 0.22f);
             create.ForeColor = NoteStyle.Contrast(create.BackColor);
-            settings.BackColor = InterfaceStyle.Blend(BackColor, ForeColor, 0.07f);
+            language.BackColor = settings.BackColor = InterfaceStyle.Blend(BackColor, ForeColor, 0.07f);
             settings.ForeColor = NoteStyle.Contrast(settings.BackColor);
             footer.ForeColor = InterfaceStyle.Blend(ForeColor, BackColor, 0.30f);
             StyleCaption(InterfaceStyle.Blend(BackColor, ForeColor, 0.027f), ForeColor);
@@ -225,7 +261,7 @@ namespace PersonalStickyNote
                 Matches(note.PlainText, query)).ToLookup(note => note.GroupId);
             var groups = session.Book.Groups.Concat(new[] { new NoteGroup
             {
-                Id = Guid.Empty, Name = "未分组", Collapsed = session.Book.UngroupedCollapsed
+                Id = Guid.Empty, Name = L.T("未分组"), Collapsed = session.Book.UngroupedCollapsed
             }}).Where(group => query.Length == 0 || matched[group.Id].Any()).ToArray();
             var signature = new List<string> { query };
             foreach (var group in groups)
@@ -235,8 +271,9 @@ namespace PersonalStickyNote
                     signature.Add(note.Id + "|" + note.Color + "|" + note.CustomBackground + "|" + Preview(note));
             }
             int count = matched.Sum(group => group.Count());
-            footer.Text = saveError.Length != 0 ? saveError :
-                (count == 0 && query.Length != 0 ? "没有匹配的便笺" : count + " 条便笺");
+            footer.Text = saveError ? L.T("保存失败，编辑后会重试") :
+                (count == 0 && query.Length != 0 ? L.T("没有匹配的便笺") :
+                    (count == 1 ? L.T("1 条便笺") : L.T("{0} 条便笺", count)));
             if (signature.SequenceEqual(rendered)) return;
             rendered = signature.ToArray();
             string selectedKey = notes.SelectedNode == null ? "" : notes.SelectedNode.Name;
@@ -280,7 +317,7 @@ namespace PersonalStickyNote
             if (!string.IsNullOrWhiteSpace(note.Title)) return note.Title;
             string text = string.Join(" ", note.PlainText.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
             if (text.Length != 0) return text;
-            return note.Rtf.Contains(@"\pict") ? "图片便笺" : "空白便笺";
+            return note.Rtf.Contains(@"\pict") ? L.T("图片便笺") : L.T("空白便笺");
         }
 
         private void RememberGroup(TreeNode node, bool collapsed)
@@ -296,10 +333,10 @@ namespace PersonalStickyNote
         private void OpenNodeMenu(TreeNode node, Point point)
         {
             var menu = new ContextMenuStrip();
-            menu.Items.Add("新建分组…", null, (sender, args) => EditGroup(null));
+            menu.Items.Add(L.T("新建分组…"), null, (sender, args) => EditGroup(null));
             if (node == null)
             {
-                menu.Items.Add("新建便笺", null, (sender, args) => NewNote(Guid.Empty));
+                menu.Items.Add(L.T("新建便笺"), null, (sender, args) => NewNote(Guid.Empty));
                 ShowMenu(menu, notes, point);
                 return;
             }
@@ -307,25 +344,25 @@ namespace PersonalStickyNote
             var note = node.Tag as Note;
             if (note != null)
             {
-                menu.Items.Add("打开／编辑便笺", null, (sender, args) => session.Open(note));
-                menu.Items.Add("重命名便笺…", null, (sender, args) => session.Rename(note, this));
-                var move = new ToolStripMenuItem("移到分组");
-                move.DropDownItems.Add("未分组", null, (sender, args) => session.Move(note, Guid.Empty));
+                menu.Items.Add(L.T("打开／编辑便笺"), null, (sender, args) => session.Open(note));
+                menu.Items.Add(L.T("重命名便笺…"), null, (sender, args) => session.Rename(note, this));
+                var move = new ToolStripMenuItem(L.T("移到分组"));
+                move.DropDownItems.Add(L.T("未分组"), null, (sender, args) => session.Move(note, Guid.Empty));
                 foreach (var group in session.Book.Groups)
                     move.DropDownItems.Add(group.Name, null, (sender, args) => session.Move(note, group.Id));
                 menu.Items.Add(move);
-                menu.Items.Add("删除便笺", null, (sender, args) => session.Delete(note, this));
+                menu.Items.Add(L.T("删除便笺"), null, (sender, args) => session.Delete(note, this));
             }
             else
             {
                 var group = (NoteGroup)node.Tag;
-                menu.Items.Add("在此新建便笺", null, (sender, args) => NewNote(group.Id));
+                menu.Items.Add(L.T("在此新建便笺"), null, (sender, args) => NewNote(group.Id));
                 if (group.Id != Guid.Empty)
                 {
-                    menu.Items.Add("重命名分组", null, (sender, args) => EditGroup(group));
-                    menu.Items.Add("删除分组", null, (sender, args) =>
+                    menu.Items.Add(L.T("重命名分组"), null, (sender, args) => EditGroup(group));
+                    menu.Items.Add(L.T("删除分组"), null, (sender, args) =>
                     {
-                        if (Confirm("删除「" + group.Name + "」？组内便笺会移到「未分组」。"))
+                        if (Confirm(L.T("删除「{0}」？组内便笺会移到「未分组」。", group.Name)))
                             session.RemoveGroup(group);
                     });
                 }
@@ -343,13 +380,13 @@ namespace PersonalStickyNote
 
         private void EditGroup(NoteGroup group)
         {
-            string name = TextPrompt.Ask(this, group == null ? "新建分组" : "重命名分组",
-                "分组名称", group == null ? "" : group.Name, 32, value =>
+            string name = TextPrompt.Ask(this, L.T(group == null ? "新建分组" : "重命名分组"),
+                L.T("分组名称"), group == null ? "" : group.Name, 32, value =>
                 {
-                    if (value.Length == 0) return "请输入分组名称。";
-                    if (value == "未分组" || session.Book.Groups.Any(item => item != group &&
+                    if (value.Length == 0) return L.T("请输入分组名称。");
+                    if (L.IsUngroupedName(value) || session.Book.Groups.Any(item => item != group &&
                         string.Equals(item.Name, value, StringComparison.OrdinalIgnoreCase)))
-                        return "这个分组名称已存在，请换一个。";
+                        return L.T("这个分组名称已存在，请换一个。");
                     return null;
                 });
             if (name == null) return;
@@ -468,12 +505,12 @@ namespace PersonalStickyNote
             try { action(); }
             catch (Exception error)
             {
-                MessageBox.Show(this, "无法更新快捷方式。\n\n" + error.Message, Program.Name,
+                MessageBox.Show(this, L.T("无法更新快捷方式。\n\n") + error.Message, Program.Name,
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
             }
         }
 
-        public void SetSaveError(string message) { saveError = message; RefreshNotes(); }
+        public void SetSaveError(bool failed) { saveError = failed; RefreshNotes(); }
         public void FocusSearch() { ShowNotebook(); search.Focus(); search.SelectAll(); }
         public void RefreshShortcutLabels()
         {
@@ -481,7 +518,7 @@ namespace PersonalStickyNote
             RefreshPin();
             if (search.IsHandleCreated)
                 SendMessage(search.Handle, 0x1501, IntPtr.Zero,
-                    "搜索名称和正文（" + session.Shortcuts.Label(ShortcutAction.Search) + "）");
+                    L.T("搜索名称和正文（{0}）", session.Shortcuts.Label(ShortcutAction.Search)));
         }
         private void RememberPosition() { NoteStyle.Remember(this, session.Book.ListPosition, session); }
         protected override void PinChanged(bool pinned) { session.Book.ListPinned = pinned; session.Changed(); }
@@ -531,16 +568,16 @@ namespace PersonalStickyNote
         public static string Ask(Form owner, string title, string label, string value, int maxLength,
             Func<string, string> validate)
         {
-            using (var dialog = new Form { Text = title, Font = owner.Font, ClientSize = new Size(338, 130),
+            using (var dialog = new Form { Text = title, Font = owner.Font, ClientSize = new Size(398, 130),
                 StartPosition = FormStartPosition.CenterParent, FormBorderStyle = FormBorderStyle.FixedDialog,
                 MaximizeBox = false, MinimizeBox = false, ShowInTaskbar = false,
                 AutoScaleDimensions = new SizeF(96, 96), AutoScaleMode = AutoScaleMode.Dpi })
             {
-                var caption = new Label { Text = label, AutoSize = true, Location = new Point(14, 14) };
-                var input = new TextBox { Text = value, MaxLength = maxLength, Width = 308,
-                    Location = new Point(14, 43), AccessibleName = label };
-                var ok = new Button { Text = "保存", Location = new Point(161, 86), Size = new Size(76, 30) };
-                var cancel = new Button { Text = "取消", Location = new Point(246, 86), Size = new Size(76, 30),
+                var caption = new Label { Text = label, Size = new Size(368, 42), Location = new Point(14, 11) };
+                var input = new TextBox { Text = value, MaxLength = maxLength, Width = 368,
+                    Location = new Point(14, 53), AccessibleName = label };
+                var ok = new Button { Text = L.T("保存"), Location = new Point(177, 88), Size = new Size(101, 30) };
+                var cancel = new Button { Text = L.T("取消"), Location = new Point(283, 88), Size = new Size(101, 30),
                     DialogResult = DialogResult.Cancel };
                 dialog.Controls.AddRange(new Control[] { caption, input, ok, cancel });
                 dialog.AcceptButton = ok;
@@ -553,7 +590,7 @@ namespace PersonalStickyNote
                     var candidate = input.Text.Trim();
                     string error = null;
                     try { System.Xml.XmlConvert.VerifyXmlChars(candidate); }
-                    catch (System.Xml.XmlException) { error = "名称含有无法保存的字符。"; }
+                    catch (System.Xml.XmlException) { error = L.T("名称含有无法保存的字符。"); }
                     if (error == null && validate != null) error = validate(candidate);
                     if (error != null) { MessageBox.Show(dialog, error, title); return; }
                     result = candidate;
