@@ -11,7 +11,10 @@ namespace PersonalStickyNote
         public Guid Id = Guid.NewGuid();
         public string Rtf = "";
         public string PlainText = "";
+        public string Title = "";
         public string Color = "yellow";
+        public int CustomBackground;
+        public int DefaultInk;
         public bool Pinned;
         public bool Open;
         public Guid GroupId;
@@ -23,6 +26,7 @@ namespace PersonalStickyNote
     {
         public Guid Id = Guid.NewGuid();
         public string Name = "";
+        public bool Collapsed;
 
         public override string ToString() { return Name; }
     }
@@ -40,6 +44,9 @@ namespace PersonalStickyNote
         public string Theme = "system";
         public bool ConfirmDelete = true;
         public bool ListVisible = true;
+        public bool ListPinned;
+        public bool UngroupedCollapsed;
+        public bool ManualNoteOrder;
         public WindowPosition ListPosition = new WindowPosition();
         public List<Note> Notes = new List<Note>();
         public List<NoteGroup> Groups = new List<NoteGroup>();
@@ -56,6 +63,8 @@ namespace PersonalStickyNote
         {
             file = Path.Combine(directory, "notes.xml");
         }
+
+        public string DirectoryPath { get { return Path.GetDirectoryName(file); } }
 
         public Notebook Load()
         {

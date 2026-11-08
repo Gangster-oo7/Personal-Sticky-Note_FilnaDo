@@ -10,7 +10,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.1.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.2.0.0")]
 
 namespace PersonalStickyNote
 {
@@ -78,11 +78,13 @@ namespace PersonalStickyNote
         private bool closing;
         public Notebook Book { get; private set; }
         public bool Dark { get; private set; }
+        public NoteFonts Fonts { get; private set; }
 
         public NoteSession(NoteStore store, bool startup = false)
         {
             this.store = store;
             Book = store.Load();
+            Fonts = new NoteFonts(Path.Combine(store.DirectoryPath, "Fonts"));
             Dark = IsDark();
             list = new ListWindow(this);
             saveTimer.Tick += (sender, args) => Save(false);
@@ -99,17 +101,30 @@ namespace PersonalStickyNote
         public void NewNote(Guid groupId = default(Guid))
         {
             var note = new Note { GroupId = groupId };
-            Book.Notes.Add(note);
+            Book.Notes.Insert(0, note);
             Open(note);
             Changed();
             list.RefreshNotes();
         }
 
-        public void Move(Note note, Guid groupId)
+        public IEnumerable<Note> OrderedNotes()
         {
-            if (note.GroupId == groupId) return;
+            return Book.ManualNoteOrder ? Book.Notes : (IEnumerable<Note>)Book.Notes.OrderByDescending(note => note.Updated);
+        }
+
+        public void Move(Note note, Guid groupId, Note anchor = null, bool after = false)
+        {
+            if (note == anchor || (anchor == null && note.GroupId == groupId)) return;
+            if (!Book.ManualNoteOrder)
+            {
+                Book.Notes = OrderedNotes().ToList();
+                Book.ManualNoteOrder = true;
+            }
             note.GroupId = groupId;
-            note.Updated = DateTime.UtcNow;
+            Book.Notes.Remove(note);
+            int index = anchor == null ? -1 : Book.Notes.IndexOf(anchor);
+            if (index < 0) Book.Notes.Add(note);
+            else Book.Notes.Insert(index + (after ? 1 : 0), note);
             Changed();
             list.RefreshNotes();
         }
@@ -120,7 +135,7 @@ namespace PersonalStickyNote
             foreach (var note in Book.Notes.Where(note => note.GroupId == group.Id))
                 note.GroupId = Guid.Empty;
             Changed();
-            list.RefreshGroups(null);
+            list.RefreshNotes();
         }
 
         public void Open(Note note, bool activate = true)
@@ -141,7 +156,7 @@ namespace PersonalStickyNote
             if (activate)
             {
                 if (window.WindowState == FormWindowState.Minimized)
-                    window.WindowState = FormWindowState.Normal;
+                    window.RestoreNormal();
                 window.Activate();
             }
         }
@@ -158,7 +173,7 @@ namespace PersonalStickyNote
             list.Show();
             if (Book.ListPosition.Width == 0) NoteStyle.Remember(list, Book.ListPosition, this);
             if (list.WindowState == FormWindowState.Minimized)
-                list.WindowState = FormWindowState.Normal;
+                list.RestoreNormal();
             if (activate) list.Activate();
         }
 
@@ -302,6 +317,7 @@ namespace PersonalStickyNote
                 saveTimer.Dispose();
                 foreach (var window in windows.Values) window.Dispose();
                 list.Dispose();
+                Fonts.Dispose();
             }
             base.Dispose(disposing);
         }
