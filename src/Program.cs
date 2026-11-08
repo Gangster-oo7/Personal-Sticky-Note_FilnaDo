@@ -11,10 +11,12 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.5.4.0")]
+[assembly: System.Reflection.AssemblyVersion("1.5.5.0")]
 
 namespace PersonalStickyNote
 {
+    internal enum LaunchMode { Manual, WindowsStartup, AfterUpdate }
+
     internal static class Program
     {
         public const string Name = "个人便签";
@@ -36,10 +38,11 @@ namespace PersonalStickyNote
             }
             Guid receipt;
             bool updated = args.Length == 2 && args[0] == "--updated" && Guid.TryParseExact(args[1], "N", out receipt);
-            bool startup = updated || args.Contains(DesktopIntegration.StartupArgument);
+            var mode = updated ? LaunchMode.AfterUpdate : args.Contains(DesktopIntegration.StartupArgument)
+                ? LaunchMode.WindowsStartup : LaunchMode.Manual;
             using (var instance = new Mutex(false, @"Local\PersonalStickyNote_FilnaDo"))
             {
-                if (!AcquireInstance(instance, startup))
+                if (!AcquireInstance(instance, mode != LaunchMode.Manual))
                 {
                     return;
                 }
@@ -48,7 +51,7 @@ namespace PersonalStickyNote
                     string directory = Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                         "PersonalStickyNote");
-                    using (var session = new NoteSession(new NoteStore(directory), startup))
+                    using (var session = new NoteSession(new NoteStore(directory), mode))
                     using (var activation = new ListActivationWindow(() => session.ShowList()))
                     {
                         if (updated)
@@ -68,13 +71,13 @@ namespace PersonalStickyNote
             }
         }
 
-        private static bool AcquireInstance(Mutex instance, bool startup)
+        private static bool AcquireInstance(Mutex instance, bool silent)
         {
             for (int attempt = 0; attempt < 20; attempt++)
             {
                 try { if (instance.WaitOne(0)) return true; }
                 catch (AbandonedMutexException) { return true; }
-                if (startup || ListActivationWindow.RequestList()) return false;
+                if (silent || ListActivationWindow.RequestList()) return false;
                 Thread.Sleep(100);
             }
             MessageBox.Show("个人便签已在运行。请从任务栏切换。如果正在运行旧版，请先退出旧版。",
@@ -97,7 +100,7 @@ namespace PersonalStickyNote
         public AppUpdates Updates { get; private set; }
         public ShortcutMap Shortcuts { get; private set; }
 
-        public NoteSession(NoteStore store, bool startup = false)
+        public NoteSession(NoteStore store, LaunchMode mode = LaunchMode.Manual)
         {
             this.store = store;
             Book = store.Load();
@@ -109,10 +112,12 @@ namespace PersonalStickyNote
             saveTimer.Tick += (sender, args) => Save(false);
             SystemEvents.UserPreferenceChanged += WindowsThemeChanged;
 
-            var restore = Book.Notes.Where(note => note.Open).ToArray();
-            if (startup && (Book.ListVisible || store.Recovered)) ShowList(false);
+            bool windowsStartup = mode == LaunchMode.WindowsStartup;
+            var restore = Book.Notes.Where(note => windowsStartup ? note.Pinned : note.Open).ToArray();
+            if (windowsStartup || (mode == LaunchMode.AfterUpdate && (Book.ListVisible || store.Recovered)))
+                ShowList(false);
             foreach (var note in restore) Open(note, false);
-            if (!startup) ShowList();
+            if (mode == LaunchMode.Manual) ShowList();
             if (store.Recovered)
                 MessageBox.Show(list, "已从上次保存的备份恢复便签。", Program.Name);
         }

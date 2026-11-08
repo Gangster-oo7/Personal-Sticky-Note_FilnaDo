@@ -49,7 +49,7 @@ namespace PersonalStickyNote
             startup.Click += (sender, args) =>
             {
                 bool enabled = !DesktopIntegration.StartsWithWindows;
-                if (!enabled || owner.Confirm("允许个人便签在登录 Windows 时启动并恢复上次的便笺吗？"))
+                if (!enabled || owner.Confirm("允许个人便签在登录 Windows 后自动显示列表和已置顶的便笺吗？"))
                     owner.TryDesktopAction(() => DesktopIntegration.SetStartup(enabled));
                 startup.Checked = DesktopIntegration.StartsWithWindows;
             };
