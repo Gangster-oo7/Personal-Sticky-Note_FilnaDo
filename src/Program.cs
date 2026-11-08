@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -10,7 +11,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.2.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
 
 namespace PersonalStickyNote
 {
@@ -28,7 +29,14 @@ namespace PersonalStickyNote
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            bool startup = args.Contains(DesktopIntegration.StartupArgument);
+            if (args.Length == 3 && args[0] == "--apply-update")
+            {
+                AppUpdates.Apply(args[1], args[2]);
+                return;
+            }
+            Guid receipt;
+            bool updated = args.Length == 2 && args[0] == "--updated" && Guid.TryParseExact(args[1], "N", out receipt);
+            bool startup = updated || args.Contains(DesktopIntegration.StartupArgument);
             using (var instance = new Mutex(false, @"Local\PersonalStickyNote_FilnaDo"))
             {
                 if (!AcquireInstance(instance, startup))
@@ -42,11 +50,18 @@ namespace PersonalStickyNote
                         "PersonalStickyNote");
                     using (var session = new NoteSession(new NoteStore(directory), startup))
                     using (var activation = new ListActivationWindow(() => session.ShowList()))
+                    {
+                        if (updated)
+                        {
+                            AppUpdates.ConfirmLaunch(args[1]);
+                            session.Notify("已更新到版本 " + AppUpdates.DisplayVersion + "。");
+                        }
                         Application.Run(session);
+                    }
                 }
                 catch (Exception error)
                 {
-                    MessageBox.Show("无法打开个人便签。\n\n" + error.Message,
+                    if (!updated) MessageBox.Show("无法打开个人便签。\n\n" + error.Message,
                         Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 finally { instance.ReleaseMutex(); }
@@ -74,11 +89,13 @@ namespace PersonalStickyNote
         private readonly Dictionary<Guid, NoteWindow> windows = new Dictionary<Guid, NoteWindow>();
         private readonly Timer saveTimer = new Timer { Interval = 450 };
         private readonly ListWindow list;
+        private readonly TrayHost tray;
         private bool dirty;
         private bool closing;
         public Notebook Book { get; private set; }
         public bool Dark { get; private set; }
         public NoteFonts Fonts { get; private set; }
+        public AppUpdates Updates { get; private set; }
 
         public NoteSession(NoteStore store, bool startup = false)
         {
@@ -87,11 +104,13 @@ namespace PersonalStickyNote
             Fonts = new NoteFonts(Path.Combine(store.DirectoryPath, "Fonts"));
             Dark = IsDark();
             list = new ListWindow(this);
+            Updates = new AppUpdates(this, store.DirectoryPath);
+            tray = new TrayHost(this, list);
             saveTimer.Tick += (sender, args) => Save(false);
             SystemEvents.UserPreferenceChanged += WindowsThemeChanged;
 
             var restore = Book.Notes.Where(note => note.Open).ToArray();
-            if (startup && (Book.ListVisible || restore.Length == 0 || store.Recovered)) ShowList(false);
+            if (startup && (Book.ListVisible || store.Recovered)) ShowList(false);
             foreach (var note in restore) Open(note, false);
             if (!startup) ShowList();
             if (store.Recovered)
@@ -100,7 +119,11 @@ namespace PersonalStickyNote
 
         public void NewNote(Guid groupId = default(Guid))
         {
-            var note = new Note { GroupId = groupId };
+            var note = new Note
+            {
+                GroupId = groupId, Color = Book.SharedPaper ? Book.ListPaper : Book.NewNotePaper,
+                CustomBackground = Book.SharedPaper ? Book.ListCustomColor : Book.NewNoteCustomColor
+            };
             Book.Notes.Insert(0, note);
             Open(note);
             Changed();
@@ -193,10 +216,32 @@ namespace PersonalStickyNote
             list.FocusSearch();
         }
 
+        public IEnumerable<Rectangle> OtherNoteBounds(NoteWindow except)
+        {
+            return windows.Values.Where(window => window != except && window.Visible &&
+                window.WindowState == FormWindowState.Normal).Select(window => window.Bounds);
+        }
+
+        public void Notify(string message) { tray.Notify(message); }
+
+        public void ConfigurePalette()
+        {
+            ShowList();
+            using (var dialog = new PaletteDialog(list, Book))
+            {
+                if (dialog.ShowDialog(list) != DialogResult.OK) return;
+                dialog.Save();
+                list.ApplyTheme();
+                Changed();
+            }
+        }
+
+        public void CheckForUpdates() { Updates.Check(list); }
+
         public void CloseList(FormClosingEventArgs args)
         {
             if (closing) return;
-            if (args.CloseReason == CloseReason.UserClosing && windows.Count > 0)
+            if (args.CloseReason == CloseReason.UserClosing)
             {
                 args.Cancel = true;
                 list.Hide();
@@ -218,7 +263,6 @@ namespace PersonalStickyNote
             window.CaptureContent();
             windows.Remove(window.Note.Id);
             window.Note.Open = false;
-            if (windows.Count == 0 && !list.Visible) ShowList();
             Changed();
             Save(false);
         }
@@ -252,9 +296,22 @@ namespace PersonalStickyNote
         {
             if (closing) return true;
             if (!Save(true)) return false;
+            ExitSaved();
+            return true;
+        }
+
+        public bool InstallUpdate(Action startHelper)
+        {
+            if (closing || !Save(true)) return false;
+            startHelper();
+            ExitSaved();
+            return true;
+        }
+
+        private void ExitSaved()
+        {
             closing = true;
             ExitThread();
-            return true;
         }
 
         public void ApplySettings()
@@ -316,6 +373,7 @@ namespace PersonalStickyNote
                 SystemEvents.UserPreferenceChanged -= WindowsThemeChanged;
                 saveTimer.Dispose();
                 foreach (var window in windows.Values) window.Dispose();
+                tray.Dispose();
                 list.Dispose();
                 Fonts.Dispose();
             }

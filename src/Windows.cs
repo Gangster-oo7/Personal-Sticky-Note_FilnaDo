@@ -41,7 +41,17 @@ namespace PersonalStickyNote
 
         public static Paper GetPaper(string id)
         {
+            if (id == "default") return Neutral;
             return Papers.FirstOrDefault(p => p.Id == id) ?? Papers[0];
+        }
+
+        public static readonly Paper Neutral = new Paper("default", "中性", 0xfbfaF7, 0x232323, 0xf5d76e);
+
+        public static Color Background(string paper, int custom, bool dark)
+        {
+            if (custom != 0) return Color.FromArgb(custom);
+            var colors = GetPaper(paper);
+            return dark ? colors.Dark : colors.Light;
         }
 
         public static Color Text(bool dark) { return dark ? Color.WhiteSmoke : ColorFrom(0x26231e); }

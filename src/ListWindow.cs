@@ -118,13 +118,25 @@ namespace PersonalStickyNote
 
         public void ApplyTheme()
         {
-            BackColor = notes.BackColor = NoteStyle.Surface(session.Dark);
-            ForeColor = notes.ForeColor = search.ForeColor = NoteStyle.Text(session.Dark);
-            search.BackColor = NoteStyle.ColorFrom(session.Dark ? 0x333333 : 0xffffff);
-            create.BackColor = NoteStyle.ColorFrom(0xf5d76e);
-            create.ForeColor = NoteStyle.Text(false);
-            settings.BackColor = manage.BackColor = NoteStyle.ColorFrom(session.Dark ? 0x3b3b3b : 0xeeeae0);
+            BackColor = notes.BackColor = NoteStyle.Background(session.Book.ListPaper,
+                session.Book.ListCustomColor, session.Dark);
+            ForeColor = notes.ForeColor = NoteStyle.Contrast(BackColor);
+            bool darkBackground = ForeColor.ToArgb() == Color.WhiteSmoke.ToArgb();
+            search.BackColor = NoteStyle.ColorFrom(darkBackground ? 0x333333 : 0xffffff);
+            search.ForeColor = NoteStyle.Contrast(search.BackColor);
+            create.BackColor = session.Book.ListCustomColor == 0
+                ? NoteStyle.GetPaper(session.Book.ListPaper).Accent
+                : Mix(BackColor, ForeColor, 0.22f);
+            create.ForeColor = NoteStyle.Contrast(create.BackColor);
+            settings.BackColor = manage.BackColor = Mix(BackColor, ForeColor, 0.10f);
+            settings.ForeColor = manage.ForeColor = NoteStyle.Contrast(settings.BackColor);
             StyleCaption(BackColor, ForeColor);
+        }
+
+        private static Color Mix(Color a, Color b, float opacity)
+        {
+            return Color.FromArgb((int)(a.R + (b.R - a.R) * opacity), (int)(a.G + (b.G - a.G) * opacity),
+                (int)(a.B + (b.B - a.B) * opacity));
         }
 
         public void RefreshNotes()
@@ -335,6 +347,14 @@ namespace PersonalStickyNote
         private void OpenSettings()
         {
             var menu = new ContextMenuStrip();
+            FillSettings(menu.Items);
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("退出个人便签", null, (sender, args) => session.Quit());
+            ShowMenu(menu, settings, new Point(0, settings.Height));
+        }
+
+        public void FillSettings(ToolStripItemCollection items)
+        {
             var theme = new ToolStripMenuItem("外观");
             foreach (var pair in new[] { "system|跟随系统", "light|浅色", "dark|深色" })
             {
@@ -343,11 +363,12 @@ namespace PersonalStickyNote
                 item.Click += (sender, args) => { session.Book.Theme = parts[0]; session.ApplySettings(); };
                 theme.DropDownItems.Add(item);
             }
-            menu.Items.Add(theme);
+            items.Add(theme);
+            items.Add("默认配色…", null, (sender, args) => session.ConfigurePalette());
             var deletion = new ToolStripMenuItem("删除前确认") { Checked = session.Book.ConfirmDelete };
             deletion.Click += (sender, args) => { session.Book.ConfirmDelete = !session.Book.ConfirmDelete; session.Changed(); };
-            menu.Items.Add(deletion);
-            menu.Items.Add(new ToolStripSeparator());
+            items.Add(deletion);
+            items.Add(new ToolStripSeparator());
             bool startup = DesktopIntegration.StartsWithWindows;
             var startupItem = new ToolStripMenuItem("登录 Windows 后自动启动") { Checked = startup };
             startupItem.Click += (sender, args) =>
@@ -355,15 +376,20 @@ namespace PersonalStickyNote
                 if (startup || Confirm("允许个人便签在你登录 Windows 后自动启动，并恢复上次打开的便笺吗？"))
                     TryDesktopAction(() => DesktopIntegration.SetStartup(!startup));
             };
-            menu.Items.Add(startupItem);
-            menu.Items.Add("创建桌面快捷方式", null, (sender, args) => TryDesktopAction(() =>
+            items.Add(startupItem);
+            items.Add("创建桌面快捷方式", null, (sender, args) => TryDesktopAction(() =>
             {
                 DesktopIntegration.CreateDesktopShortcut();
                 MessageBox.Show(this, "已创建桌面快捷方式「个人便签」。", Program.Name);
             }));
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("退出个人便签", null, (sender, args) => session.Quit());
-            ShowMenu(menu, settings, new Point(0, settings.Height));
+            items.Add(new ToolStripSeparator());
+            items.Add("检查更新…", null, (sender, args) => session.CheckForUpdates());
+            items.Add("GitHub 更新访问…", null, (sender, args) =>
+            {
+                session.ShowList();
+                session.Updates.ConfigureAccess(this);
+            });
+            items.Add(new ToolStripMenuItem("版本 " + AppUpdates.DisplayVersion) { Enabled = false });
         }
 
         private bool Confirm(string message)

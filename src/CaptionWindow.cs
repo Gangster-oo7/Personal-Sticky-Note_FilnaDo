@@ -20,6 +20,8 @@ namespace PersonalStickyNote
         private readonly ToolTip tips = new ToolTip();
         private Color captionInk;
         private Rectangle normalBounds;
+        private bool moved;
+        protected bool InSizeMove { get; private set; }
 
         [DllImport("user32.dll")]
         private static extern bool ReleaseCapture();
@@ -57,6 +59,8 @@ namespace PersonalStickyNote
         }
 
         protected void InstallCaption() { Controls.Add(caption); }
+        protected void ShowCaption(bool visible) { caption.Visible = visible; }
+        protected virtual void OnMoveCompleted() { }
 
         private void StartCaptionDrag(object sender, MouseEventArgs args)
         {
@@ -125,6 +129,8 @@ namespace PersonalStickyNote
 
         protected override void WndProc(ref Message message)
         {
+            if (message.Msg == 0x0231) { InSizeMove = true; moved = false; } // WM_ENTERSIZEMOVE
+            if (message.Msg == 0x0216 && InSizeMove) moved = true; // WM_MOVING
             bool restore = message.Msg == 0x0112 && // WM_SYSCOMMAND
                 (message.WParam.ToInt64() & 0xfff0) == 0xf120 && WindowState != FormWindowState.Normal;
             if (message.Msg == 0x0112 && WindowState == FormWindowState.Normal)
@@ -146,6 +152,11 @@ namespace PersonalStickyNote
                 return;
             }
             base.WndProc(ref message);
+            if (message.Msg == 0x0232) // WM_EXITSIZEMOVE
+            {
+                InSizeMove = false;
+                if (moved) OnMoveCompleted();
+            }
             if (restore && WindowState == FormWindowState.Normal && !normalBounds.IsEmpty)
                 Bounds = normalBounds;
             if (message.Msg != 0x0084) return; // WM_NCHITTEST

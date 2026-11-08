@@ -16,6 +16,7 @@ namespace PersonalStickyNote
         public int CustomBackground;
         public int DefaultInk;
         public bool Pinned;
+        public bool Snap = true;
         public bool Open;
         public Guid GroupId;
         public WindowPosition Position = new WindowPosition();
@@ -47,6 +48,11 @@ namespace PersonalStickyNote
         public bool ListPinned;
         public bool UngroupedCollapsed;
         public bool ManualNoteOrder;
+        public string ListPaper = "default";
+        public string NewNotePaper = "yellow";
+        public int ListCustomColor;
+        public int NewNoteCustomColor;
+        public bool SharedPaper;
         public WindowPosition ListPosition = new WindowPosition();
         public List<Note> Notes = new List<Note>();
         public List<NoteGroup> Groups = new List<NoteGroup>();

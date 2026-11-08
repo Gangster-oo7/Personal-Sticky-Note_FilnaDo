@@ -20,6 +20,7 @@ namespace PersonalStickyNote
         private readonly Button add = NoteStyle.Button("＋", 34, "新建便笺");
         private readonly Button title = NoteStyle.Button("命名便笺", 108);
         private readonly Button more = NoteStyle.Button("⋯", 35, "便笺选项");
+        private readonly Button snap = NoteStyle.Button("磁吸", 59);
         private readonly FlowLayoutPanel appearance = new FlowLayoutPanel();
         private readonly Button font = NoteStyle.Button("字体", 60);
         private readonly Button ink = NoteStyle.Button("文字颜色", 82);
@@ -27,6 +28,9 @@ namespace PersonalStickyNote
         private readonly ToolTip tips = new ToolTip();
         private bool contentChanged;
         private bool styling;
+        private bool paperOnly;
+        private readonly Timer hoverTimer = new Timer { Interval = 90 };
+        private ContextMenuStrip openMenu;
         public Note Note { get; private set; }
 
         public NoteWindow(NoteSession session, Note note)
@@ -49,12 +53,15 @@ namespace PersonalStickyNote
             title.Dock = DockStyle.Fill;
             title.TextAlign = ContentAlignment.MiddleLeft;
             more.Dock = DockStyle.Right;
+            snap.Dock = DockStyle.Right;
             header.Controls.Add(title);
             header.Controls.Add(add);
+            header.Controls.Add(snap);
             header.Controls.Add(more);
             add.Click += (sender, args) => session.NewNote(Note.GroupId);
             title.Click += (sender, args) => Rename();
             more.Click += (sender, args) => OpenMenu();
+            snap.Click += (sender, args) => { Note.Snap = !Note.Snap; RefreshSnap(); session.Changed(); };
             tips.SetToolTip(add, "新建便笺（Ctrl+N）");
             tips.SetToolTip(more, "背景颜色、手写、便笺列表和删除");
             RefreshTitle();
@@ -123,9 +130,83 @@ namespace PersonalStickyNote
             editor.SelectionChanged += (sender, args) => { if (!styling) RefreshTools(); };
             InstallEditorMenu();
             NoteStyle.Restore(this, note.Position);
-            Shown += (sender, args) => { editor.Focus(); RefreshTools(); };
+            hoverTimer.Tick += (sender, args) => RefreshHover();
+            Shown += (sender, args) => { editor.Focus(); RefreshTools(); RefreshHover(); hoverTimer.Start(); };
             LocationChanged += (sender, args) => RememberPosition();
-            SizeChanged += (sender, args) => RememberPosition();
+            SizeChanged += (sender, args) => { RememberPosition(); if (paperOnly) UpdatePaperRegion(); };
+        }
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr WindowFromPoint(Point point);
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetAncestor(IntPtr window, uint flags);
+
+        private void RefreshHover()
+        {
+            if (!Visible || WindowState == FormWindowState.Minimized) return;
+            var target = WindowFromPoint(Cursor.Position);
+            bool hovered = target == Handle || (target != IntPtr.Zero && GetAncestor(target, 2) == Handle);
+            SetPaperOnly(!hovered && !InSizeMove && Enabled &&
+                (openMenu == null || !openMenu.Visible) && !editor.ContextMenuStrip.Visible &&
+                WindowState == FormWindowState.Normal);
+        }
+
+        private void SetPaperOnly(bool compact)
+        {
+            if (paperOnly == compact) return;
+            paperOnly = compact;
+            SuspendLayout();
+            ShowCaption(!compact);
+            header.Visible = toolbar.Visible = appearance.Visible = !compact;
+            BackColor = compact ? editor.BackColor : header.BackColor;
+            Padding = compact ? Padding.Empty : new Padding(5);
+            UpdatePaperRegion();
+            ResumeLayout();
+        }
+
+        private void UpdatePaperRegion()
+        {
+            if (!paperOnly) { Region = null; return; }
+            int w = Width, h = Height;
+            using (var graphics = CreateGraphics())
+            using (var path = new GraphicsPath())
+            {
+                float r = Math.Min(Math.Min(w, h) / 2f, 22 * graphics.DpiX / 96f);
+                float control = r * 0.82f;
+                path.StartFigure();
+                path.AddBezier(0, r, 0, r - control, r - control, 0, r, 0);
+                path.AddLine(r, 0, w - r, 0);
+                path.AddBezier(w - r, 0, w - r + control, 0, w, r - control, w, r);
+                path.AddLine(w, r, w, h - r);
+                path.AddBezier(w, h - r, w, h - r + control, w - r + control, h, w - r, h);
+                path.AddLine(w - r, h, r, h);
+                path.AddBezier(r, h, r - control, h, 0, h - r + control, 0, h - r);
+                path.CloseFigure();
+                Region = new Region(path);
+            }
+        }
+
+        private void RefreshSnap()
+        {
+            snap.Text = Note.Snap ? "磁吸 ✓" : "磁吸";
+            snap.BackColor = Note.Snap ? NoteStyle.Contrast(header.BackColor) : header.BackColor;
+            snap.ForeColor = NoteStyle.Contrast(snap.BackColor);
+            snap.AccessibleName = Note.Snap ? "关闭磁吸" : "开启磁吸";
+            tips.SetToolTip(snap, snap.AccessibleName);
+        }
+
+        protected override void OnMoveCompleted()
+        {
+            if (Note.Snap && WindowState == FormWindowState.Normal)
+            {
+                using (var graphics = CreateGraphics())
+                {
+                    float scale = graphics.DpiX / 96f;
+                    Location = NotePlacement.Snap(Bounds, Screen.FromControl(this).WorkingArea,
+                        session.OtherNoteBounds(this), (int)Math.Round(18 * scale), (int)Math.Round(8 * scale));
+                }
+            }
+            RefreshHover();
         }
 
         private Button Tool(string label, string description, Action action, int width = 31)
@@ -165,7 +246,8 @@ namespace PersonalStickyNote
                 ? (session.Dark ? paper.Dark : paper.Light) : Color.FromArgb(Note.CustomBackground);
             var surface = Note.CustomBackground == 0 ? paper.Accent : background;
             var foreground = Note.CustomBackground == 0 ? NoteStyle.Text(session.Dark) : NoteStyle.Contrast(background);
-            BackColor = header.BackColor = add.BackColor = title.BackColor = more.BackColor = surface;
+            header.BackColor = add.BackColor = title.BackColor = more.BackColor = surface;
+            BackColor = paperOnly ? background : surface;
             add.ForeColor = title.ForeColor = more.ForeColor = NoteStyle.Contrast(surface);
             page.BackColor = editor.BackColor = toolbar.BackColor = appearance.BackColor = background;
             if (Note.DefaultInk != foreground.ToArgb())
@@ -183,6 +265,7 @@ namespace PersonalStickyNote
                 button.BackColor = background;
             }
             StyleCaption(surface, NoteStyle.Contrast(surface));
+            RefreshSnap();
             RefreshTools();
         }
 
@@ -236,8 +319,7 @@ namespace PersonalStickyNote
             menu.Items.Add("便笺列表", null, (sender, args) => session.ShowList());
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("删除便笺", null, (sender, args) => session.Delete(Note, this));
-            menu.Closed += (sender, args) => BeginInvoke(new Action(menu.Dispose));
-            menu.Show(more, new Point(0, more.Height));
+            ShowMenu(menu, more);
         }
 
         private void SetBackground(int background)
@@ -271,8 +353,18 @@ namespace PersonalStickyNote
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("自定义文字颜色…", null, (sender, args) =>
                 PickColor(editor.SelectionColor.IsEmpty ? Color.FromArgb(Note.DefaultInk) : editor.SelectionColor, ApplyTextColor));
-            menu.Closed += (sender, args) => BeginInvoke(new Action(menu.Dispose));
-            menu.Show(ink, new Point(0, ink.Height));
+            ShowMenu(menu, ink);
+        }
+
+        private void ShowMenu(ContextMenuStrip menu, Control anchor)
+        {
+            openMenu = menu;
+            menu.Closed += (sender, args) =>
+            {
+                openMenu = null;
+                BeginInvoke(new Action(menu.Dispose));
+            };
+            menu.Show(anchor, new Point(0, anchor.Height));
         }
 
         private void ApplyTextColor(Color color)
@@ -380,7 +472,11 @@ namespace PersonalStickyNote
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) tips.Dispose();
+            if (disposing)
+            {
+                hoverTimer.Dispose();
+                tips.Dispose();
+            }
             base.Dispose(disposing);
         }
 
