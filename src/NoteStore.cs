@@ -72,8 +72,6 @@ namespace PersonalStickyNote
             file = Path.Combine(directory, "notes.xml");
         }
 
-        public string DirectoryPath { get { return Path.GetDirectoryName(file); } }
-
         public Notebook Load()
         {
             try { return Read(file); }

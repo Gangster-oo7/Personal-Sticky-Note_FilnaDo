@@ -60,7 +60,6 @@ namespace PersonalStickyNote
                 session.Notify(L.T("已创建桌面快捷方式。"));
             }));
             AddButton(L.T("检查更新…"), session.CheckForUpdates);
-            AddButton(L.T("GitHub 更新访问…"), () => session.Updates.ConfigureAccess(owner));
             version.Text = L.T("版本 {0}", AppUpdates.DisplayVersion);
             version.Margin = new Padding(3, 10, 3, 3);
             general.Controls.Add(version);

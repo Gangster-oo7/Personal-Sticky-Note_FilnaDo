@@ -1,6 +1,5 @@
 using System;
 using System.Diagnostics;
-using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Reflection;
@@ -22,15 +21,13 @@ namespace PersonalStickyNote
         private const int MaximumJson = 12 * 1024 * 1024;
         private static readonly Version Current = typeof(AppUpdates).Assembly.GetName().Version;
         private readonly NoteSession session;
-        private readonly string tokenFile;
         private bool checking;
 
         public static string DisplayVersion { get { return Current.ToString(3); } }
 
-        public AppUpdates(NoteSession session, string directory)
+        public AppUpdates(NoteSession session)
         {
             this.session = session;
-            tokenFile = Path.Combine(directory, "update-access.dat");
             CleanSuccessfulStages(Application.ExecutablePath);
         }
 
@@ -40,15 +37,7 @@ namespace PersonalStickyNote
             checking = true;
             try
             {
-                string token = ReadToken();
-                if (token.Length == 0)
-                {
-                    session.ShowList(openNotebook: false);
-                    if (!ConfigureAccess(owner)) return;
-                    token = ReadToken();
-                    if (token.Length == 0) return;
-                }
-                var manifest = await Task.Run(() => LoadManifest(token));
+                var manifest = await Task.Run(() => LoadManifest());
                 if (owner.IsDisposed) return;
                 if (manifest.ReleaseVersion <= Current)
                 {
@@ -60,7 +49,7 @@ namespace PersonalStickyNote
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
                     return;
 
-                var binary = await Task.Run(() => Download(token, manifest));
+                var binary = await Task.Run(() => Download(manifest));
                 if (owner.IsDisposed) return;
                 session.InstallUpdate(() => StartHelper(manifest, binary));
             }
@@ -73,78 +62,9 @@ namespace PersonalStickyNote
             finally { checking = false; }
         }
 
-        public bool ConfigureAccess(Form owner)
+        private static Manifest LoadManifest()
         {
-            using (var dialog = new Form { Text = L.T("GitHub 更新访问"), Font = owner.Font,
-                ClientSize = new Size(470, 215), StartPosition = FormStartPosition.CenterParent,
-                FormBorderStyle = FormBorderStyle.FixedDialog, MaximizeBox = false, MinimizeBox = false,
-                ShowInTaskbar = false, AutoScaleDimensions = new SizeF(96, 96), AutoScaleMode = AutoScaleMode.Dpi })
-            {
-                var help = new Label { Text = L.T("检查私有仓库需要 GitHub 细粒度令牌。仅授权此仓库的 Contents 读取权限。凭据加密保存在当前 Windows 账户。"),
-                    Location = new Point(14, 12), Size = new Size(442, 105) };
-                var input = new TextBox { UseSystemPasswordChar = true, Width = 442, MaxLength = 256,
-                    Location = new Point(14, 119), AccessibleName = L.T("GitHub 只读令牌") };
-                var clear = new Button { Text = L.T("清除凭据"), Location = new Point(14, 166), Size = new Size(173, 34),
-                    Enabled = File.Exists(tokenFile) };
-                var save = new Button { Text = L.T("保存"), Location = new Point(254, 166), Size = new Size(99, 34) };
-                var cancel = new Button { Text = L.T("取消"), Location = new Point(357, 166), Size = new Size(99, 34),
-                    DialogResult = DialogResult.Cancel };
-                clear.Click += (sender, args) => SaveAccess(dialog, "");
-                save.Click += (sender, args) =>
-                {
-                    string token = input.Text.Trim();
-                    if (!token.StartsWith("github_pat_", StringComparison.Ordinal) || !IsToken(token))
-                    {
-                        MessageBox.Show(dialog, L.T("请输入 GitHub 细粒度令牌（github_pat_ 开头）。"), dialog.Text);
-                        return;
-                    }
-                    SaveAccess(dialog, token);
-                };
-                dialog.Controls.AddRange(new Control[] { help, input, clear, save, cancel });
-                dialog.AcceptButton = save;
-                dialog.CancelButton = cancel;
-                dialog.ActiveControl = input;
-                return dialog.ShowDialog(owner) == DialogResult.OK;
-            }
-        }
-
-        private static bool IsToken(string token)
-        {
-            foreach (char c in token)
-                if (!(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') && !(c >= '0' && c <= '9') && c != '_')
-                    return false;
-            return token.Length > "github_pat_".Length;
-        }
-
-        private void SaveAccess(Form dialog, string token)
-        {
-            try
-            {
-                if (token.Length == 0) File.Delete(tokenFile);
-                else
-                {
-                    Directory.CreateDirectory(Path.GetDirectoryName(tokenFile));
-                    byte[] encrypted = ProtectedData.Protect(Encoding.UTF8.GetBytes(token), null, DataProtectionScope.CurrentUser);
-                    string temporary = tokenFile + ".tmp";
-                    File.WriteAllBytes(temporary, encrypted);
-                    if (File.Exists(tokenFile)) File.Replace(temporary, tokenFile, null);
-                    else File.Move(temporary, tokenFile);
-                }
-                dialog.DialogResult = DialogResult.OK;
-            }
-            catch (Exception error) { MessageBox.Show(dialog, L.T("无法保存更新凭据。\n\n") + error.Message, dialog.Text); }
-        }
-
-        private string ReadToken()
-        {
-            if (!File.Exists(tokenFile)) return "";
-            return Encoding.UTF8.GetString(ProtectedData.Unprotect(File.ReadAllBytes(tokenFile), null,
-                DataProtectionScope.CurrentUser));
-        }
-
-        private static Manifest LoadManifest(string token)
-        {
-            var entry = Request<GitBlob>("contents/updates/version.json?ref=main", token);
+            var entry = Request<GitBlob>("contents/updates/version.json?ref=main");
             return ParseManifest(Encoding.UTF8.GetString(DecodeBlob(entry)));
         }
 
@@ -160,9 +80,9 @@ namespace PersonalStickyNote
             return manifest;
         }
 
-        private static byte[] Download(string token, Manifest manifest)
+        private static byte[] Download(Manifest manifest)
         {
-            var binary = DecodeBlob(Request<GitBlob>("git/blobs/" + manifest.blob, token));
+            var binary = DecodeBlob(Request<GitBlob>("git/blobs/" + manifest.blob));
             using (var sha = SHA256.Create())
             {
                 var actual = BitConverter.ToString(sha.ComputeHash(binary)).Replace("-", "");
@@ -172,14 +92,13 @@ namespace PersonalStickyNote
             return binary;
         }
 
-        private static T Request<T>(string relative, string token)
+        private static T Request<T>(string relative)
         {
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
             var request = WebRequest.CreateHttp(Api + relative);
             request.AllowAutoRedirect = false;
             request.Accept = "application/vnd.github+json";
             request.UserAgent = "PersonalStickyNote/" + DisplayVersion;
-            request.Headers[HttpRequestHeader.Authorization] = "Bearer " + token;
             request.Timeout = request.ReadWriteTimeout = 15000;
             try
             {
@@ -200,13 +119,8 @@ namespace PersonalStickyNote
             }
             catch (WebException error)
             {
-                using (var response = error.Response as HttpWebResponse)
-                {
-                    if (response != null && (response.StatusCode == HttpStatusCode.Unauthorized ||
-                        response.StatusCode == HttpStatusCode.Forbidden || response.StatusCode == HttpStatusCode.NotFound))
-                        throw new IOException(L.T("无法读取私有仓库中的更新。请检查「GitHub 更新访问」中的令牌权限或有效期。"));
-                }
-                throw new IOException(L.T("连接 GitHub 失败，请稍后重试。"));
+                if (error.Response != null) error.Response.Dispose();
+                throw new IOException(L.T("连接 GitHub 失败，请稍后重试。"), error);
             }
         }
 

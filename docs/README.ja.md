@@ -2,15 +2,23 @@
 
 [简体中文](../README.md) · [English](README.en.md) · [Français](README.fr.md) · [Español](README.es.md) · 日本語 · [한국어](README.ko.md)
 
-`Personal Sticky Note_FilnaDo` は、付箋を端末に保存する Windows アプリです。Windows 10 または 11 と .NET Framework 4.8 以降の環境で [PersonalStickyNote.exe](../updates/PersonalStickyNote.exe) をダブルクリックして起動します。
+`Personal Sticky Note_FilnaDo` は、付箋を端末に保存する Windows アプリです。
+
+**[PersonalStickyNote.exe をダウンロード](https://github.com/Gangster-oo7/Personal-Sticky-Note_FilnaDo/raw/refs/heads/main/updates/PersonalStickyNote.exe)** · 初回公開版 **v1.0.1**。
+
+Windows 10 または 11 と .NET Framework 4.8 以降の環境で、ダウンロードした EXE をダブルクリックします。更新やショートカットを利用するため、書き込み可能な固定のフォルダーに保存してください。
+
+バージョン番号が高いテスト版を使用していた場合は、そのアプリを終了し、EXE を v1.0.1 に一度置き換えてください。以後はアプリから更新できます。
 
 付箋一覧の **設定** の横にある地球儀ボタンで表示言語を選択できます。既定では Windows の表示言語に合わせ、未対応の言語では英語を使用します。簡体字中国語、英語、フランス語、スペイン語、日本語、韓国語から選択でき、設定はすぐに反映・保存されます。Windows のファイル選択画面や色の選択画面にはシステムの表示言語が使われます。
 
 - 一覧や付箋を最前面に固定できます。**Windows にサインインしたら起動** を有効にすると、サインイン時に一覧と固定した付箋が保存された位置に開きます。
 - 一覧から付箋を作成、検索、名前変更し、グループに整理できます。ドラッグで移動や並べ替えができ、右クリックでメニューを開きます。
-- 文字の書式設定、画像や手書きの挿入、チェックリストの作成ができます。チェックボックスで完了を切り替え、Enter で項目を追加できます。`- [ ]` や `- [x]` の Markdown タスクも貼り付けられます。
+- 文字の書式設定、画像や手書きの挿入、チェックリストの作成ができます。チェックボックスで完了を切り替え、Enter キーで項目を追加できます。
 - 一覧と新規付箋の既定色や明暗テーマを設定し、ウィンドウを画面の端や近くの付箋に揃えられます。キー割り当ては **設定 → ショートカット** で変更できます。
 
-付箋とグループは `%LOCALAPPDATA%\PersonalStickyNote\notes.xml` に保存され、バックアップも作成されます。アカウントなしで使用できます。プライベートリポジトリから更新を確認する場合は、このリポジトリの **Contents** に読み取り専用でアクセスできる GitHub トークンが必要です。
+付箋、グループ、設定は現在の Windows アカウントの `%LOCALAPPDATA%\PersonalStickyNote\notes.xml` に保存され、同じフォルダーにバックアップも作成されます。同じアカウントで EXE を移動しても元のデータを使います。別のアカウントや PC では別のデータフォルダーが使われます。EXE を移動した場合は、ショートカットを作り直し、自動起動をオフにしてから再度オンにしてください。
+
+更新は設定または通知領域のメニューから確認できます。GitHub アカウントは不要です。
 
 リポジトリのルートで `powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1` を実行すると、`dist` に実行ファイルが生成されます。翻訳は [`src/Strings.tsv`](../src/Strings.tsv) にあります。

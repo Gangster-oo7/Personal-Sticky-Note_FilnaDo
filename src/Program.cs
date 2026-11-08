@@ -11,7 +11,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.6.3.0")]
+[assembly: System.Reflection.AssemblyVersion("1.0.1.0")]
 
 namespace PersonalStickyNote
 {
@@ -114,7 +114,7 @@ namespace PersonalStickyNote
             Shortcuts = new ShortcutMap(Book);
             Dark = IsDark();
             list = new ListWindow(this);
-            Updates = new AppUpdates(this, store.DirectoryPath);
+            Updates = new AppUpdates(this);
             tray = new TrayHost(this, list);
             saveTimer.Tick += (sender, args) => Save(false);
             SystemEvents.UserPreferenceChanged += WindowsThemeChanged;
