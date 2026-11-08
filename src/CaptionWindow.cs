@@ -11,8 +11,7 @@ namespace PersonalStickyNote
         private readonly Label captionText = new Label { Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(4, 0, 0, 0),
             AutoEllipsis = true };
-        private readonly PictureBox icon = new PictureBox { Dock = DockStyle.Left, Width = 30,
-            SizeMode = PictureBoxSizeMode.CenterImage, AccessibleName = Program.Name };
+        private readonly PictureBox icon;
         private readonly SoftButton pin = (SoftButton)NoteStyle.Button("", 35, "置顶");
         private readonly SoftButton minimize = (SoftButton)NoteStyle.Button("", 34, "最小化");
         private readonly SoftButton maximize = (SoftButton)NoteStyle.Button("", 34, "最大化");
@@ -43,15 +42,22 @@ namespace PersonalStickyNote
             }
         }
 
-        protected CaptionWindow()
+        protected CaptionWindow(bool showIcon = true)
         {
             Padding = new Padding(5);
             pin.Symbol = Glyph.Pin;
             minimize.Symbol = Glyph.Minimize;
             close.Symbol = Glyph.Close;
             caption.Controls.Add(captionText);
-            using (var small = new Icon(NoteStyle.AppIcon, new Size(16, 16))) icon.Image = small.ToBitmap();
-            caption.Controls.Add(icon);
+            if (showIcon)
+            {
+                icon = new PictureBox { Dock = DockStyle.Left, Width = 30,
+                    SizeMode = PictureBoxSizeMode.CenterImage, AccessibleName = Program.Name };
+                using (var small = new Icon(NoteStyle.AppIcon, new Size(16, 16))) icon.Image = small.ToBitmap();
+                caption.Controls.Add(icon);
+                icon.MouseDown += StartCaptionDrag;
+            }
+            else captionText.Padding = new Padding(9, 0, 0, 0);
             foreach (var button in new[] { pin, minimize, maximize, close })
             {
                 button.Dock = DockStyle.Right;
@@ -68,7 +74,6 @@ namespace PersonalStickyNote
             tips.SetToolTip(minimize, "最小化");
             tips.SetToolTip(close, "关闭");
             captionText.MouseDown += StartCaptionDrag;
-            icon.MouseDown += StartCaptionDrag;
             TextChanged += (sender, args) => captionText.Text = Text;
             SizeChanged += (sender, args) => RefreshMaximize();
             RefreshMaximize();
@@ -118,7 +123,8 @@ namespace PersonalStickyNote
 
         protected void StyleCaption(Color surface, Color ink)
         {
-            caption.BackColor = captionText.BackColor = icon.BackColor = surface;
+            caption.BackColor = captionText.BackColor = surface;
+            if (icon != null) icon.BackColor = surface;
             captionText.ForeColor = captionInk = ink;
             foreach (var button in new[] { minimize, maximize, close })
             {
@@ -239,7 +245,7 @@ namespace PersonalStickyNote
                     activeMenu = null;
                 }
                 tips.Dispose();
-                if (icon.Image != null) icon.Image.Dispose();
+                if (icon != null && icon.Image != null) icon.Image.Dispose();
             }
             base.Dispose(disposing);
         }

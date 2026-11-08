@@ -11,7 +11,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.5.2.0")]
+[assembly: System.Reflection.AssemblyVersion("1.5.3.0")]
 
 namespace PersonalStickyNote
 {
@@ -273,6 +273,16 @@ namespace PersonalStickyNote
             window.Note.Open = false;
             Changed();
             Save(false);
+        }
+
+        public void Rename(Note note, Form owner)
+        {
+            var title = TextPrompt.Ask(owner, "便笺名称", "名称（留空时显示正文预览）", note.Title, 64, null);
+            if (title == null || title == note.Title) return;
+            note.Title = title;
+            note.Updated = DateTime.UtcNow;
+            Changed();
+            list.RefreshNotes();
         }
 
         public void Delete(Note note, Form owner)

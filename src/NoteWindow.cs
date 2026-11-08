@@ -22,14 +22,14 @@ namespace PersonalStickyNote
         private readonly System.Collections.Generic.Dictionary<ToolStripButton, Glyph> icons =
             new System.Collections.Generic.Dictionary<ToolStripButton, Glyph>();
         private readonly ToolStripButton[] formats;
-        private readonly ToolStripButton add, more, snap, ink, undo, redo, todo;
+        private readonly ToolStripButton add, more, snap, ink, todo;
         private Color colorIconInk;
         private Color colorIconUnderline;
         private bool contentChanged;
         private bool styling;
         public Note Note { get; private set; }
 
-        public NoteWindow(NoteSession session, Note note)
+        public NoteWindow(NoteSession session, Note note) : base(showIcon: false)
         {
             this.session = session;
             Note = note;
@@ -73,8 +73,6 @@ namespace PersonalStickyNote
 
             toolbar.Font = Font;
             add = Tool("新建便笺", () => session.NewNote(Note.GroupId), Glyph.Add, true);
-            undo = Tool("撤销", () => UndoEdit(false), Glyph.Undo);
-            redo = Tool("重做", () => UndoEdit(true), Glyph.Redo);
             ink = Tool("文字颜色", OpenInkMenu, essential: true);
             ink.DisplayStyle = ToolStripItemDisplayStyle.Image;
             ink.ImageScaling = ToolStripItemImageScaling.None;
@@ -94,7 +92,7 @@ namespace PersonalStickyNote
             var image = Tool("插入图片", PickImage, Glyph.Image);
             snap = Tool("磁吸", () => { Note.Snap = !Note.Snap; RefreshSnap(); session.Changed(); }, Glyph.Magnet, true);
             more = Tool("更多操作", OpenMenu, Glyph.More, true);
-            toolbar.Items.AddRange(new ToolStripItem[] { add, undo, redo, new ToolStripSeparator(),
+            toolbar.Items.AddRange(new ToolStripItem[] { add,
                 formats[0], formats[1], formats[2], formats[3], ink, formats[4], todo, image, snap, more });
             RefreshShortcutLabels();
             Controls.Add(page);
@@ -155,8 +153,6 @@ namespace PersonalStickyNote
             PinShortcut = session.Shortcuts.Label(ShortcutAction.Pin);
             RefreshPin();
             Describe(add, "新建便笺", ShortcutAction.New);
-            Describe(undo, "撤销", ShortcutAction.Undo);
-            Describe(redo, "重做", ShortcutAction.Redo);
             Describe(todo, "切换待办列表", ShortcutAction.Todo);
             var actions = new[] { ShortcutAction.Bold, ShortcutAction.Italic, ShortcutAction.Underline,
                 ShortcutAction.Strike, ShortcutAction.Bullet };
@@ -167,15 +163,6 @@ namespace PersonalStickyNote
         protected override void PinChanged(bool pinned)
         {
             Note.Pinned = pinned;
-            session.Changed();
-        }
-
-        private void Rename()
-        {
-            var value = TextPrompt.Ask(this, "便笺名称", "名称（留空时显示正文预览）", Note.Title, 64, null);
-            if (value == null || value == Note.Title) return;
-            Note.Title = value;
-            Note.Updated = DateTime.UtcNow;
             session.Changed();
         }
 
@@ -226,8 +213,6 @@ namespace PersonalStickyNote
                 bool active = i == 4 ? editor.SelectionBullet : (selected.Mask & selected.Effects & mask) != 0;
                 formats[i].Checked = active;
             }
-            undo.Enabled = editor.CanUndo;
-            redo.Enabled = editor.CanRedo;
             todo.Checked = editor.CurrentLineIsTodo;
         }
 
@@ -262,7 +247,8 @@ namespace PersonalStickyNote
         private void OpenMenu()
         {
             var menu = new ContextMenuStrip();
-            menu.Items.Add(Note.Title.Length == 0 ? "命名便笺…" : "重命名便笺…", null, (sender, args) => Rename());
+            menu.Items.Add(Note.Title.Length == 0 ? "命名便笺…" : "重命名便笺…", null,
+                (sender, args) => session.Rename(Note, this));
             menu.Items.Add("手写或涂画", null, (sender, args) => Sketch());
             menu.Items.Add("便笺列表", null, (sender, args) => session.ShowList());
             menu.Items.Add(new ToolStripSeparator());
@@ -402,8 +388,6 @@ namespace PersonalStickyNote
             Note.Updated = DateTime.UtcNow;
             session.Changed();
             if (editor.IsImeComposing) return;
-            undo.Enabled = editor.CanUndo;
-            redo.Enabled = editor.CanRedo;
             todo.Checked = editor.CurrentLineIsTodo;
         }
 

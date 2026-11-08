@@ -304,6 +304,7 @@ namespace PersonalStickyNote
             if (note != null)
             {
                 menu.Items.Add("打开／编辑便笺", null, (sender, args) => session.Open(note));
+                menu.Items.Add("重命名便笺…", null, (sender, args) => session.Rename(note, this));
                 var move = new ToolStripMenuItem("移到分组");
                 move.DropDownItems.Add("未分组", null, (sender, args) => session.Move(note, Guid.Empty));
                 foreach (var group in session.Book.Groups)
@@ -513,7 +514,9 @@ namespace PersonalStickyNote
             get
             {
                 var parameters = base.CreateParams;
-                parameters.Style |= 0x8000; // TVS_NOHSCROLL, keeping vertical scrolling enabled.
+                const int noTooltips = 0x0080; // TVS_NOTOOLTIPS
+                const int noHorizontalScroll = 0x8000; // TVS_NOHSCROLL
+                parameters.Style |= noTooltips | noHorizontalScroll;
                 return parameters;
             }
         }
