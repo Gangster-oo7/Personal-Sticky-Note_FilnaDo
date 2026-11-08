@@ -53,6 +53,7 @@ namespace PersonalStickyNote
         public int ListCustomColor;
         public int NewNoteCustomColor;
         public bool SharedPaper;
+        public List<ShortcutBinding> Shortcuts = new List<ShortcutBinding>();
         public WindowPosition ListPosition = new WindowPosition();
         public List<Note> Notes = new List<Note>();
         public List<NoteGroup> Groups = new List<NoteGroup>();

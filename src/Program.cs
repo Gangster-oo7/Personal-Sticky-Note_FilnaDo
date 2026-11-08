@@ -11,7 +11,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.3.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.4.0.0")]
 
 namespace PersonalStickyNote
 {
@@ -96,11 +96,13 @@ namespace PersonalStickyNote
         public bool Dark { get; private set; }
         public NoteFonts Fonts { get; private set; }
         public AppUpdates Updates { get; private set; }
+        public ShortcutMap Shortcuts { get; private set; }
 
         public NoteSession(NoteStore store, bool startup = false)
         {
             this.store = store;
             Book = store.Load();
+            Shortcuts = new ShortcutMap(Book);
             Fonts = new NoteFonts(Path.Combine(store.DirectoryPath, "Fonts"));
             Dark = IsDark();
             list = new ListWindow(this);
@@ -184,7 +186,7 @@ namespace PersonalStickyNote
             }
         }
 
-        public void ShowList(bool activate = true)
+        public void ShowList(bool activate = true, bool openNotebook = true)
         {
             if (closing) return;
             if (!Book.ListVisible)
@@ -192,6 +194,7 @@ namespace PersonalStickyNote
                 Book.ListVisible = true;
                 Changed();
             }
+            if (openNotebook) list.ShowNotebook();
             list.RefreshNotes();
             list.Show();
             if (Book.ListPosition.Width == 0) NoteStyle.Remember(list, Book.ListPosition, this);
@@ -226,7 +229,7 @@ namespace PersonalStickyNote
 
         public void ConfigurePalette()
         {
-            ShowList();
+            ShowList(openNotebook: false);
             using (var dialog = new PaletteDialog(list, Book))
             {
                 if (dialog.ShowDialog(list) != DialogResult.OK) return;
@@ -237,6 +240,13 @@ namespace PersonalStickyNote
         }
 
         public void CheckForUpdates() { Updates.Check(list); }
+
+        public void ShortcutsChanged()
+        {
+            list.RefreshShortcutLabels();
+            foreach (var window in windows.Values) window.RefreshShortcutLabels();
+            Changed();
+        }
 
         public void CloseList(FormClosingEventArgs args)
         {

@@ -14,23 +14,16 @@ namespace PersonalStickyNote
     {
         private readonly NoteSession session;
         private readonly RichEditor editor = new RichEditor();
-        private readonly Panel header = new Panel();
         private readonly Panel page = new Panel();
-        private readonly FlowLayoutPanel toolbar = new FlowLayoutPanel();
-        private readonly Button add = NoteStyle.Button("＋", 34, "新建便笺");
-        private readonly Button title = NoteStyle.Button("命名便笺", 108);
-        private readonly Button more = NoteStyle.Button("⋯", 35, "便笺选项");
-        private readonly Button snap = NoteStyle.Button("磁吸", 59);
-        private readonly FlowLayoutPanel appearance = new FlowLayoutPanel();
-        private readonly Button font = NoteStyle.Button("字体", 60);
-        private readonly Button ink = NoteStyle.Button("文字颜色", 82);
-        private readonly Button[] formats;
-        private readonly ToolTip tips = new ToolTip();
+        private readonly ToolStrip toolbar = new ToolStrip { Dock = DockStyle.Top, GripStyle = ToolStripGripStyle.Hidden,
+            CanOverflow = true, Padding = new Padding(6, 3, 6, 3), TabStop = true,
+            Renderer = new EditorStripRenderer(), AccessibleName = "便笺编辑工具" };
+        private readonly System.Collections.Generic.Dictionary<ToolStripButton, Glyph> icons =
+            new System.Collections.Generic.Dictionary<ToolStripButton, Glyph>();
+        private readonly ToolStripButton[] formats;
+        private readonly ToolStripButton add, more, snap, font, fontSize, ink, undo, redo, todo;
         private bool contentChanged;
         private bool styling;
-        private bool paperOnly;
-        private readonly Timer hoverTimer = new Timer { Interval = 90 };
-        private ContextMenuStrip openMenu;
         public Note Note { get; private set; }
 
         public NoteWindow(NoteSession session, Note note)
@@ -40,31 +33,12 @@ namespace PersonalStickyNote
             Text = Program.Name + "·便笺";
             Icon = NoteStyle.AppIcon;
             Font = new Font("Microsoft YaHei UI", 10);
-            Size = new Size(378, 352);
+            Size = new Size(528, 356);
             MinimumSize = new Size(326, 238);
             AutoScaleMode = AutoScaleMode.Dpi;
             AutoScaleDimensions = new SizeF(96, 96);
             TopMost = note.Pinned;
-
-            header.Dock = DockStyle.Top;
-            header.Height = 40;
-            header.Padding = new Padding(6, 5, 6, 4);
-            add.Dock = DockStyle.Left;
-            title.Dock = DockStyle.Fill;
-            title.TextAlign = ContentAlignment.MiddleLeft;
-            more.Dock = DockStyle.Right;
-            snap.Dock = DockStyle.Right;
-            header.Controls.Add(title);
-            header.Controls.Add(add);
-            header.Controls.Add(snap);
-            header.Controls.Add(more);
-            add.Click += (sender, args) => session.NewNote(Note.GroupId);
-            title.Click += (sender, args) => Rename();
-            more.Click += (sender, args) => OpenMenu();
-            snap.Click += (sender, args) => { Note.Snap = !Note.Snap; RefreshSnap(); session.Changed(); };
-            tips.SetToolTip(add, "新建便笺（Ctrl+N）");
-            tips.SetToolTip(more, "背景颜色、手写、便笺列表和删除");
-            RefreshTitle();
+            PinShortcut = session.Shortcuts.Label(ShortcutAction.Pin);
 
             editor.BorderStyle = BorderStyle.None;
             editor.Dock = DockStyle.Fill;
@@ -85,43 +59,39 @@ namespace PersonalStickyNote
                     catch (System.ComponentModel.Win32Exception error) { ShowError("无法打开链接", error); }
                 }
             };
-            page.Padding = new Padding(13, 12, 8, 5);
+            page.Padding = new Padding(17, 14, 12, 9);
             page.Dock = DockStyle.Fill;
             page.Controls.Add(editor);
 
-            toolbar.Dock = DockStyle.Bottom;
-            toolbar.Height = 39;
-            toolbar.Padding = new Padding(7, 4, 0, 4);
-            toolbar.WrapContents = false;
+            toolbar.Font = Font;
+            add = Tool("新建便笺", () => session.NewNote(Note.GroupId), Glyph.Add, true);
+            undo = Tool("撤销", () => UndoEdit(false), Glyph.Undo);
+            redo = Tool("重做", () => UndoEdit(true), Glyph.Redo);
+            font = Tool("字体 ▾", ChooseFont, essential: true);
+            fontSize = Tool("11 pt ▾", ChooseFontSize);
+            fontSize.AccessibleName = fontSize.ToolTipText = "字号";
+            ink = Tool("颜色 ▾", OpenInkMenu, essential: true);
             formats = new[]
             {
-                Tool("B", "加粗（Ctrl+B）", () => Format(1)),
-                Tool("I", "斜体（Ctrl+I）", () => Format(2)),
-                Tool("U", "下划线（Ctrl+U）", () => Format(4)),
-                Tool("S", "删除线（Ctrl+T）", () => Format(8)),
-                Tool("•", "项目符号（Ctrl+Shift+L）", ToggleBullet)
+                Tool("B", () => Format(1)),
+                Tool("I", () => Format(2)),
+                Tool("U", () => Format(4)),
+                Tool("S", () => Format(8)),
+                Tool("≡", ToggleBullet)
             };
             formats[0].Font = new Font(Font, FontStyle.Bold);
             formats[1].Font = new Font(Font, FontStyle.Italic);
             formats[2].Font = new Font(Font, FontStyle.Underline);
             formats[3].Font = new Font(Font, FontStyle.Strikeout);
-            var image = Tool("图片", "插入图片", PickImage, 53);
-            var todo = Tool("☐ 待办", "添加待办（Ctrl+Shift+J）", () => editor.AddTodo(), 65);
-            toolbar.Controls.AddRange(formats);
-            toolbar.Controls.Add(todo);
-            toolbar.Controls.Add(image);
-            appearance.Dock = DockStyle.Bottom;
-            appearance.Height = 35;
-            appearance.Padding = new Padding(7, 0, 0, 3);
-            appearance.WrapContents = false;
-            appearance.Controls.Add(font);
-            appearance.Controls.Add(ink);
-            font.Click += (sender, args) => ChooseFont();
-            ink.Click += (sender, args) => OpenInkMenu();
+            todo = Tool("添加待办", editor.AddTodo, Glyph.Todo, true);
+            var image = Tool("插入图片", PickImage, Glyph.Image);
+            snap = Tool("磁吸", () => { Note.Snap = !Note.Snap; RefreshSnap(); session.Changed(); }, Glyph.Magnet, true);
+            more = Tool("更多操作", OpenMenu, Glyph.More, true);
+            toolbar.Items.AddRange(new ToolStripItem[] { add, undo, redo, new ToolStripSeparator(), font, fontSize,
+                formats[0], formats[1], formats[2], formats[3], ink, formats[4], todo, image, snap, more });
+            RefreshShortcutLabels();
             Controls.Add(page);
-            Controls.Add(appearance);
             Controls.Add(toolbar);
-            Controls.Add(header);
             InstallCaption();
 
             ApplyTheme();
@@ -130,69 +100,16 @@ namespace PersonalStickyNote
             editor.SelectionChanged += (sender, args) => { if (!styling) RefreshTools(); };
             InstallEditorMenu();
             NoteStyle.Restore(this, note.Position);
-            hoverTimer.Tick += (sender, args) => RefreshHover();
-            Shown += (sender, args) => { editor.Focus(); RefreshTools(); RefreshHover(); hoverTimer.Start(); };
+            Shown += (sender, args) => { editor.Focus(); RefreshTools(); };
             LocationChanged += (sender, args) => RememberPosition();
-            SizeChanged += (sender, args) => { RememberPosition(); if (paperOnly) UpdatePaperRegion(); };
-        }
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr WindowFromPoint(Point point);
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetAncestor(IntPtr window, uint flags);
-
-        private void RefreshHover()
-        {
-            if (!Visible || WindowState == FormWindowState.Minimized) return;
-            var target = WindowFromPoint(Cursor.Position);
-            bool hovered = target == Handle || (target != IntPtr.Zero && GetAncestor(target, 2) == Handle);
-            SetPaperOnly(!hovered && !InSizeMove && Enabled &&
-                (openMenu == null || !openMenu.Visible) && !editor.ContextMenuStrip.Visible &&
-                WindowState == FormWindowState.Normal);
-        }
-
-        private void SetPaperOnly(bool compact)
-        {
-            if (paperOnly == compact) return;
-            paperOnly = compact;
-            SuspendLayout();
-            ShowCaption(!compact);
-            header.Visible = toolbar.Visible = appearance.Visible = !compact;
-            BackColor = compact ? editor.BackColor : header.BackColor;
-            Padding = compact ? Padding.Empty : new Padding(5);
-            UpdatePaperRegion();
-            ResumeLayout();
-        }
-
-        private void UpdatePaperRegion()
-        {
-            if (!paperOnly) { Region = null; return; }
-            int w = Width, h = Height;
-            using (var graphics = CreateGraphics())
-            using (var path = new GraphicsPath())
-            {
-                float r = Math.Min(Math.Min(w, h) / 2f, 22 * graphics.DpiX / 96f);
-                float control = r * 0.82f;
-                path.StartFigure();
-                path.AddBezier(0, r, 0, r - control, r - control, 0, r, 0);
-                path.AddLine(r, 0, w - r, 0);
-                path.AddBezier(w - r, 0, w - r + control, 0, w, r - control, w, r);
-                path.AddLine(w, r, w, h - r);
-                path.AddBezier(w, h - r, w, h - r + control, w - r + control, h, w - r, h);
-                path.AddLine(w - r, h, r, h);
-                path.AddBezier(r, h, r - control, h, 0, h - r + control, 0, h - r);
-                path.CloseFigure();
-                Region = new Region(path);
-            }
+            SizeChanged += (sender, args) => RememberPosition();
         }
 
         private void RefreshSnap()
         {
-            snap.Text = Note.Snap ? "磁吸 ✓" : "磁吸";
-            snap.BackColor = Note.Snap ? NoteStyle.Contrast(header.BackColor) : header.BackColor;
-            snap.ForeColor = NoteStyle.Contrast(snap.BackColor);
+            snap.Checked = Note.Snap;
             snap.AccessibleName = Note.Snap ? "关闭磁吸" : "开启磁吸";
-            tips.SetToolTip(snap, snap.AccessibleName);
+            snap.ToolTipText = snap.AccessibleName;
         }
 
         protected override void OnMoveCompleted()
@@ -206,15 +123,37 @@ namespace PersonalStickyNote
                         session.OtherNoteBounds(this), (int)Math.Round(18 * scale), (int)Math.Round(8 * scale));
                 }
             }
-            RefreshHover();
         }
 
-        private Button Tool(string label, string description, Action action, int width = 31)
+        private ToolStripButton Tool(string label, Action action, Glyph? icon = null, bool essential = false)
         {
-            var button = NoteStyle.Button(label, width, description);
-            tips.SetToolTip(button, description);
-            button.Click += (sender, args) => { action(); editor.Focus(); };
+            var button = new ToolStripButton(label) { AccessibleName = label, ToolTipText = label,
+                DisplayStyle = icon.HasValue ? ToolStripItemDisplayStyle.Image : ToolStripItemDisplayStyle.Text,
+                Overflow = essential ? ToolStripItemOverflow.Never : ToolStripItemOverflow.AsNeeded,
+                Padding = new Padding(1, 4, 1, 4) };
+            if (icon.HasValue) icons.Add(button, icon.Value);
+            button.Click += (sender, args) => action();
             return button;
+        }
+
+        private void Describe(ToolStripButton item, string label, ShortcutAction action)
+        {
+            item.AccessibleName = label;
+            item.ToolTipText = label + "（" + session.Shortcuts.Label(action) + "）";
+        }
+
+        public void RefreshShortcutLabels()
+        {
+            PinShortcut = session.Shortcuts.Label(ShortcutAction.Pin);
+            RefreshPin();
+            Describe(add, "新建便笺", ShortcutAction.New);
+            Describe(undo, "撤销", ShortcutAction.Undo);
+            Describe(redo, "重做", ShortcutAction.Redo);
+            Describe(todo, "添加待办", ShortcutAction.Todo);
+            var actions = new[] { ShortcutAction.Bold, ShortcutAction.Italic, ShortcutAction.Underline,
+                ShortcutAction.Strike, ShortcutAction.Bullet };
+            for (int i = 0; i < formats.Length; i++)
+                Describe(formats[i], ShortcutMap.Commands.First(command => command.Action == actions[i]).Label, actions[i]);
         }
 
         protected override void PinChanged(bool pinned)
@@ -223,19 +162,12 @@ namespace PersonalStickyNote
             session.Changed();
         }
 
-        private void RefreshTitle()
-        {
-            title.Text = Note.Title.Length == 0 ? "命名便笺" : Note.Title.Replace("&", "&&");
-            tips.SetToolTip(title, Note.Title.Length == 0 ? "命名便笺" : Note.Title + " · 点击重命名");
-        }
-
         private void Rename()
         {
             var value = TextPrompt.Ask(this, "便笺名称", "名称（留空时显示正文预览）", Note.Title, 64, null);
             if (value == null || value == Note.Title) return;
             Note.Title = value;
             Note.Updated = DateTime.UtcNow;
-            RefreshTitle();
             session.Changed();
         }
 
@@ -244,12 +176,13 @@ namespace PersonalStickyNote
             var paper = NoteStyle.GetPaper(Note.Color);
             var background = Note.CustomBackground == 0
                 ? (session.Dark ? paper.Dark : paper.Light) : Color.FromArgb(Note.CustomBackground);
-            var surface = Note.CustomBackground == 0 ? paper.Accent : background;
             var foreground = Note.CustomBackground == 0 ? NoteStyle.Text(session.Dark) : NoteStyle.Contrast(background);
-            header.BackColor = add.BackColor = title.BackColor = more.BackColor = surface;
-            BackColor = paperOnly ? background : surface;
-            add.ForeColor = title.ForeColor = more.ForeColor = NoteStyle.Contrast(surface);
-            page.BackColor = editor.BackColor = toolbar.BackColor = appearance.BackColor = background;
+            var tint = Note.CustomBackground == 0 ? paper.Accent : foreground;
+            var surface = InterfaceStyle.Blend(background, tint, 0.12f);
+            BackColor = surface;
+            page.BackColor = editor.BackColor = toolbar.BackColor = background;
+            toolbar.OverflowButton.DropDown.BackColor = background;
+            toolbar.OverflowButton.DropDown.ForeColor = foreground;
             if (Note.DefaultInk != foreground.ToArgb())
             {
                 styling = true;
@@ -259,10 +192,12 @@ namespace PersonalStickyNote
                 contentChanged = true;
                 session.Changed();
             }
-            foreach (Control button in toolbar.Controls.Cast<Control>().Concat(appearance.Controls.Cast<Control>()))
+            foreach (ToolStripItem item in toolbar.Items) item.ForeColor = foreground;
+            foreach (var pair in icons)
             {
-                button.ForeColor = foreground;
-                button.BackColor = background;
+                var previous = pair.Key.Image;
+                pair.Key.Image = InterfaceStyle.Icon(pair.Value, foreground);
+                if (previous != null) previous.Dispose();
             }
             StyleCaption(surface, NoteStyle.Contrast(surface));
             RefreshSnap();
@@ -272,13 +207,16 @@ namespace PersonalStickyNote
         private void RefreshTools()
         {
             var selected = editor.GetFormat();
+            fontSize.Text = (selected.Mask & 0x80000000u) == 0
+                ? "字号 ▾" : Math.Round(selected.Height / 20m).ToString("0") + " pt ▾";
             for (int i = 0; i < formats.Length; i++)
             {
                 uint mask = (uint)(1 << i);
                 bool active = i == 4 ? editor.SelectionBullet : (selected.Mask & selected.Effects & mask) != 0;
-                formats[i].BackColor = active ? NoteStyle.GetPaper(Note.Color).Accent : toolbar.BackColor;
-                formats[i].ForeColor = NoteStyle.Contrast(formats[i].BackColor);
+                formats[i].Checked = active;
             }
+            undo.Enabled = editor.CanUndo;
+            redo.Enabled = editor.CanRedo;
         }
 
         private void Format(uint mask)
@@ -299,8 +237,18 @@ namespace PersonalStickyNote
         private void OpenMenu()
         {
             var menu = new ContextMenuStrip();
-            var colors = new ToolStripMenuItem("背景颜色");
-            foreach (var paper in NoteStyle.Papers)
+            menu.Items.Add(Note.Title.Length == 0 ? "命名便笺…" : "重命名便笺…", null, (sender, args) => Rename());
+            menu.Items.Add("手写或涂画", null, (sender, args) => Sketch());
+            menu.Items.Add("便笺列表", null, (sender, args) => session.ShowList());
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("删除便笺", null, (sender, args) => session.Delete(Note, this));
+            ShowMenu(menu, more);
+        }
+
+        private ToolStripMenuItem BackgroundMenu()
+        {
+            var colors = new ToolStripMenuItem("便笺背景");
+            foreach (var paper in new[] { NoteStyle.Neutral }.Concat(NoteStyle.Papers))
             {
                 var item = new ToolStripMenuItem(paper.Label) { Checked = Note.CustomBackground == 0 && Note.Color == paper.Id };
                 item.BackColor = paper.Light;
@@ -314,12 +262,7 @@ namespace PersonalStickyNote
             colors.DropDownItems.Add(new ToolStripSeparator());
             colors.DropDownItems.Add("自定义背景…", null, (sender, args) =>
                 PickColor(editor.BackColor, selected => SetBackground(selected.ToArgb())));
-            menu.Items.Add(colors);
-            menu.Items.Add("手写或涂画", null, (sender, args) => Sketch());
-            menu.Items.Add("便笺列表", null, (sender, args) => session.ShowList());
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("删除便笺", null, (sender, args) => session.Delete(Note, this));
-            ShowMenu(menu, more);
+            return colors;
         }
 
         private void SetBackground(int background)
@@ -353,18 +296,18 @@ namespace PersonalStickyNote
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("自定义文字颜色…", null, (sender, args) =>
                 PickColor(editor.SelectionColor.IsEmpty ? Color.FromArgb(Note.DefaultInk) : editor.SelectionColor, ApplyTextColor));
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(BackgroundMenu());
             ShowMenu(menu, ink);
         }
 
-        private void ShowMenu(ContextMenuStrip menu, Control anchor)
+        private void ShowMenu(ContextMenuStrip menu, ToolStripItem anchor)
         {
-            openMenu = menu;
-            menu.Closed += (sender, args) =>
-            {
-                openMenu = null;
-                BeginInvoke(new Action(menu.Dispose));
-            };
-            menu.Show(anchor, new Point(0, anchor.Height));
+            var parent = anchor.GetCurrentParent();
+            if (parent == null) { menu.Dispose(); return; }
+            // Anchor overflow commands to the persistent toolbar, since its overflow menu closes on selection.
+            if (parent != toolbar) PresentMenu(menu, toolbar, new Point(toolbar.Width - 30, toolbar.Height));
+            else PresentMenu(menu, parent, new Point(anchor.Bounds.Left, anchor.Bounds.Bottom));
         }
 
         private void ApplyTextColor(Color color)
@@ -376,12 +319,99 @@ namespace PersonalStickyNote
 
         private void ChooseFont()
         {
-            using (var dialog = new FontPicker(this, session.Fonts, editor.GetFormat().FaceName))
+            var menu = new ContextMenuStrip();
+            var current = editor.GetFormat().FaceName;
+            var names = session.Fonts.Families();
+            var favorites = new[] { current, "微软雅黑", "Microsoft YaHei UI", "宋体", "SimSun", "仿宋", "FangSong",
+                "楷体", "KaiTi", "幼圆", "YouYuan", "黑体", "SimHei", "等线", "DengXian", "Segoe UI" }
+                .Where(name => names.Contains(name, StringComparer.OrdinalIgnoreCase))
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var ordered = favorites.Concat(names).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            var panel = new Panel { Size = new Size(228, 244), Padding = new Padding(4) };
+            var filter = new TextBox { Dock = DockStyle.Top, AccessibleName = "搜索字体" };
+            var choices = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false, AccessibleName = "字体列表" };
+            panel.Controls.Add(choices);
+            panel.Controls.Add(filter);
+            choices.Items.AddRange(ordered);
+            choices.SelectedIndex = Array.FindIndex(ordered, name => string.Equals(name, current, StringComparison.OrdinalIgnoreCase));
+            menu.Items.Add(new ToolStripControlHost(panel) { AutoSize = false, Size = panel.Size });
+            filter.TextChanged += (sender, args) =>
             {
-                if (dialog.ShowDialog(this) != DialogResult.OK) return;
-                editor.Focus();
-                editor.SetFace(dialog.Family);
-                if (editor.SelectionLength != 0) Edited();
+                choices.BeginUpdate();
+                choices.Items.Clear();
+                choices.Items.AddRange(ordered.Where(name => name.IndexOf(filter.Text.Trim(),
+                    StringComparison.CurrentCultureIgnoreCase) >= 0).ToArray());
+                if (choices.Items.Count > 0) choices.SelectedIndex = 0;
+                choices.EndUpdate();
+            };
+            Action choose = () =>
+            {
+                var family = choices.SelectedItem as string;
+                if (family == null) return;
+                menu.Close();
+                ApplyFont(family);
+            };
+            choices.MouseUp += (sender, args) =>
+            {
+                if (args.Button == MouseButtons.Left && choices.IndexFromPoint(args.Location) >= 0) choose();
+            };
+            KeyEventHandler selectOnEnter = (sender, args) =>
+            {
+                if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; choose(); }
+                if (args.KeyCode == Keys.Down && sender == filter && choices.Items.Count > 0)
+                { choices.Focus(); args.SuppressKeyPress = true; }
+            };
+            choices.KeyDown += selectOnEnter;
+            filter.KeyDown += selectOnEnter;
+            choices.PreviewKeyDown += (sender, args) => { if (args.KeyCode == Keys.Enter) args.IsInputKey = true; };
+            filter.PreviewKeyDown += (sender, args) =>
+            {
+                if (args.KeyCode == Keys.Enter || args.KeyCode == Keys.Down) args.IsInputKey = true;
+            };
+            menu.Opened += (sender, args) => filter.Focus();
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("导入字体…", null, (sender, args) => ImportFont());
+            ShowMenu(menu, font);
+        }
+
+        private void ChooseFontSize()
+        {
+            var menu = new ContextMenuStrip();
+            int size = editor.GetFormat().Height;
+            foreach (int points in new[] { 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32 })
+            {
+                var item = new ToolStripMenuItem(points + " pt") { Checked = size == points * 20 };
+                item.Click += (sender, args) =>
+                {
+                    editor.Focus();
+                    editor.SetPointSize(points);
+                    if (editor.SelectionLength != 0) Edited();
+                    RefreshTools();
+                };
+                menu.Items.Add(item);
+            }
+            ShowMenu(menu, fontSize);
+        }
+
+        private void ApplyFont(string family)
+        {
+            editor.Focus();
+            editor.SetFace(family);
+            if (editor.SelectionLength != 0) Edited();
+        }
+
+        private void ImportFont()
+        {
+            using (var picker = new OpenFileDialog { Title = "导入字体", Filter = "字体文件|*.ttf;*.otf;*.ttc" })
+            {
+                if (picker.ShowDialog(this) != DialogResult.OK) return;
+                try
+                {
+                    var families = session.Fonts.Import(picker.FileName);
+                    if (families.Length == 1) ApplyFont(families[0]);
+                    else ChooseFont();
+                }
+                catch (Exception error) { ShowError("无法导入字体", error); }
             }
         }
 
@@ -441,6 +471,8 @@ namespace PersonalStickyNote
             contentChanged = true;
             Note.Updated = DateTime.UtcNow;
             session.Changed();
+            undo.Enabled = editor.CanUndo;
+            redo.Enabled = editor.CanRedo;
         }
 
         private void UndoEdit(bool redo)
@@ -473,35 +505,34 @@ namespace PersonalStickyNote
         protected override void Dispose(bool disposing)
         {
             if (disposing)
-            {
-                hoverTimer.Dispose();
-                tips.Dispose();
-            }
+                foreach (var button in icons.Keys)
+                    if (button.Image != null) button.Image.Dispose();
             base.Dispose(disposing);
         }
 
         protected override bool ProcessCmdKey(ref Message message, Keys key)
         {
-            switch (key)
+            switch (session.Shortcuts.Find(key, true))
             {
-                case Keys.Control | Keys.N: session.NewNote(Note.GroupId); return true;
-                case Keys.Control | Keys.H: session.ShowList(); return true;
-                case Keys.Control | Keys.F: session.SearchNotes(); return true;
-                case Keys.Control | Keys.W: Close(); return true;
-                case Keys.Control | Keys.D: session.Delete(Note, this); return true;
-                case Keys.Control | Keys.B: Format(1); return true;
-                case Keys.Control | Keys.I: Format(2); return true;
-                case Keys.Control | Keys.U: Format(4); return true;
-                case Keys.Control | Keys.T: Format(8); return true;
-                case Keys.Control | Keys.Y: UndoEdit(true); return true;
-                case Keys.Control | Keys.Z: UndoEdit(false); return true;
-                case Keys.Control | Keys.Shift | Keys.L: ToggleBullet(); return true;
-                case Keys.Control | Keys.Shift | Keys.J: editor.AddTodo(); return true;
-                case Keys.Control | Keys.Shift | Keys.K: editor.ToggleCurrentTodo(); return true;
-                case Keys.Control | Keys.Shift | Keys.P: TogglePin(); return true;
-                case Keys.Control | Keys.Tab: session.Cycle(this, false); return true;
-                case Keys.Control | Keys.Shift | Keys.Tab: session.Cycle(this, true); return true;
+                case ShortcutAction.New: session.NewNote(Note.GroupId); return true;
+                case ShortcutAction.OpenList: session.ShowList(); return true;
+                case ShortcutAction.Search: session.SearchNotes(); return true;
+                case ShortcutAction.Close: Close(); return true;
+                case ShortcutAction.Delete: session.Delete(Note, this); return true;
+                case ShortcutAction.Bold: Format(1); return true;
+                case ShortcutAction.Italic: Format(2); return true;
+                case ShortcutAction.Underline: Format(4); return true;
+                case ShortcutAction.Strike: Format(8); return true;
+                case ShortcutAction.Redo: UndoEdit(true); return true;
+                case ShortcutAction.Undo: UndoEdit(false); return true;
+                case ShortcutAction.Bullet: ToggleBullet(); return true;
+                case ShortcutAction.Todo: editor.AddTodo(); return true;
+                case ShortcutAction.ToggleTodo: editor.ToggleCurrentTodo(); return true;
+                case ShortcutAction.Pin: TogglePin(); return true;
+                case ShortcutAction.Next: session.Cycle(this, false); return true;
+                case ShortcutAction.Previous: session.Cycle(this, true); return true;
             }
+            if (session.Shortcuts.IsReplacedDefault(key, true)) return true;
             return base.ProcessCmdKey(ref message, key);
         }
     }
@@ -542,6 +573,12 @@ namespace PersonalStickyNote
         public void SetFace(string family)
         {
             var format = new CharacterFormat { Size = FormatSize, Mask = 0x28000000, Charset = 1, FaceName = family };
+            SendMessage(Handle, SetCharacterFormat, new IntPtr(1), ref format);
+        }
+
+        public void SetPointSize(int points)
+        {
+            var format = new CharacterFormat { Size = FormatSize, Mask = 0x80000000, Height = points * 20 };
             SendMessage(Handle, SetCharacterFormat, new IntPtr(1), ref format);
         }
 

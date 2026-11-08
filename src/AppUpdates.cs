@@ -43,7 +43,7 @@ namespace PersonalStickyNote
                 string token = ReadToken();
                 if (token.Length == 0)
                 {
-                    session.ShowList();
+                    session.ShowList(openNotebook: false);
                     if (!ConfigureAccess(owner)) return;
                     token = ReadToken();
                     if (token.Length == 0) return;

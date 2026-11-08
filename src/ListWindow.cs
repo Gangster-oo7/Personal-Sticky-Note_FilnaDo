@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -13,12 +14,16 @@ namespace PersonalStickyNote
         private readonly NoteSession session;
         private readonly TreeView notes = new TreeView { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
             HideSelection = false, FullRowSelect = true, ShowLines = false, AllowDrop = true,
+            ShowPlusMinus = false, ShowRootLines = false, DrawMode = TreeViewDrawMode.OwnerDrawAll,
             AccessibleName = "便笺和分组" };
         private readonly TextBox search = new TextBox { Dock = DockStyle.Top, AccessibleName = "搜索便笺" };
+        private readonly Panel searchFrame = new Panel { Dock = DockStyle.Fill,
+            Padding = new Padding(9, 6, 9, 0), Margin = new Padding(0, 0, 0, 8) };
         private readonly Label footer = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
-        private readonly Button create = NoteStyle.Button("＋ 新建便笺", 102);
-        private readonly Button manage = NoteStyle.Button("新建分组", 80);
-        private readonly Button settings = NoteStyle.Button("设置", 48);
+        private readonly Button create = NoteStyle.Button("＋  新建便笺", 124);
+        private readonly Button settings = NoteStyle.Button("设置", 62);
+        private readonly TableLayoutPanel layout;
+        private SettingsView settingsView;
         private string saveError = "";
         private string[] rendered = new string[0];
         private bool refreshing;
@@ -39,19 +44,27 @@ namespace PersonalStickyNote
             AutoScaleDimensions = new SizeF(96, 96);
             TopMost = session.Book.ListPinned;
 
-            var layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1,
-                Padding = new Padding(12, 10, 12, 4) };
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
+            layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1,
+                Padding = new Padding(14, 12, 14, 5) };
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
             var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
-            actions.Controls.AddRange(new Control[] { create, manage, settings });
+            actions.Controls.AddRange(new Control[] { create, settings });
             create.Click += (sender, args) => NewNote(SelectedGroup);
-            manage.Click += (sender, args) => EditGroup(null);
             settings.Click += (sender, args) => OpenSettings();
             layout.Controls.Add(actions, 0, 0);
-            layout.Controls.Add(search, 0, 1);
+            search.BorderStyle = BorderStyle.None;
+            searchFrame.Controls.Add(search);
+            searchFrame.Paint += (sender, args) =>
+            {
+                args.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                using (var fill = new SolidBrush(search.BackColor))
+                using (var path = InterfaceStyle.Rounded(searchFrame.ClientRectangle, 7))
+                    args.Graphics.FillPath(fill, path);
+            };
+            layout.Controls.Add(searchFrame, 0, 1);
             layout.Controls.Add(notes, 0, 2);
             layout.Controls.Add(footer, 0, 3);
             Controls.Add(layout);
@@ -63,14 +76,15 @@ namespace PersonalStickyNote
                 var note = args.Node.Tag as Note;
                 if (args.Button == MouseButtons.Left && note != null) session.Open(note);
             };
-            notes.NodeMouseClick += (sender, args) =>
+            notes.DrawNode += DrawRow;
+            notes.MouseUp += (sender, args) =>
             {
-                if (args.Button == MouseButtons.Left && args.Node.Parent == null &&
-                    args.Clicks == 1 && args.Node.Bounds.Contains(args.Location))
-                    args.Node.Toggle();
+                var node = TargetAt(args.Location);
+                if (args.Button == MouseButtons.Left && node != null && node.Parent == null)
+                    node.Toggle();
                 if (args.Button != MouseButtons.Right) return;
-                notes.SelectedNode = args.Node;
-                OpenNodeMenu(args.Node, args.Location);
+                notes.SelectedNode = node;
+                OpenNodeMenu(node, args.Location);
             };
             notes.AfterExpand += (sender, args) => RememberGroup(args.Node, false);
             notes.AfterCollapse += (sender, args) => RememberGroup(args.Node, true);
@@ -92,9 +106,9 @@ namespace PersonalStickyNote
             SizeChanged += (sender, args) => RememberPosition();
             Shown += (sender, args) =>
             {
-                SendMessage(search.Handle, 0x1501, IntPtr.Zero, "搜索名称和正文（Ctrl+F）");
+                RefreshShortcutLabels();
                 using (var graphics = CreateGraphics())
-                    notes.ItemHeight = (int)Math.Round(30 * graphics.DpiY / 96f);
+                    notes.ItemHeight = (int)Math.Round(32 * graphics.DpiY / 96f);
             };
             ApplyTheme();
             RefreshNotes();
@@ -121,22 +135,62 @@ namespace PersonalStickyNote
             BackColor = notes.BackColor = NoteStyle.Background(session.Book.ListPaper,
                 session.Book.ListCustomColor, session.Dark);
             ForeColor = notes.ForeColor = NoteStyle.Contrast(BackColor);
-            bool darkBackground = ForeColor.ToArgb() == Color.WhiteSmoke.ToArgb();
-            search.BackColor = NoteStyle.ColorFrom(darkBackground ? 0x333333 : 0xffffff);
+            searchFrame.BackColor = BackColor;
+            search.BackColor = InterfaceStyle.Blend(BackColor, ForeColor, 0.065f);
             search.ForeColor = NoteStyle.Contrast(search.BackColor);
             create.BackColor = session.Book.ListCustomColor == 0
                 ? NoteStyle.GetPaper(session.Book.ListPaper).Accent
-                : Mix(BackColor, ForeColor, 0.22f);
+                : InterfaceStyle.Blend(BackColor, ForeColor, 0.22f);
             create.ForeColor = NoteStyle.Contrast(create.BackColor);
-            settings.BackColor = manage.BackColor = Mix(BackColor, ForeColor, 0.10f);
-            settings.ForeColor = manage.ForeColor = NoteStyle.Contrast(settings.BackColor);
+            settings.BackColor = InterfaceStyle.Blend(BackColor, ForeColor, 0.07f);
+            settings.ForeColor = NoteStyle.Contrast(settings.BackColor);
             StyleCaption(BackColor, ForeColor);
+            if (settingsView != null) settingsView.ApplyTheme(BackColor, ForeColor);
+            notes.Invalidate();
         }
 
-        private static Color Mix(Color a, Color b, float opacity)
+        private void DrawRow(object sender, DrawTreeNodeEventArgs args)
         {
-            return Color.FromArgb((int)(a.R + (b.R - a.R) * opacity), (int)(a.G + (b.G - a.G) * opacity),
-                (int)(a.B + (b.B - a.B) * opacity));
+            var canvas = args.Graphics;
+            var row = new Rectangle(0, args.Bounds.Top, notes.ClientSize.Width, args.Bounds.Height);
+            bool group = args.Node.Tag is NoteGroup;
+            bool selected = args.Node == notes.SelectedNode;
+            Color ink = notes.ForeColor;
+            Color paper = notes.BackColor;
+            Color fill = selected || args.Node == dropGroup ? InterfaceStyle.Blend(paper, ink, 0.12f)
+                : group ? InterfaceStyle.Blend(paper, ink, 0.035f) : paper;
+            using (var backdrop = new SolidBrush(paper)) canvas.FillRectangle(backdrop, row);
+            using (var brush = new SolidBrush(fill))
+            using (var path = InterfaceStyle.Rounded(Rectangle.Inflate(row, -2, -2), 7))
+            {
+                canvas.SmoothingMode = SmoothingMode.AntiAlias;
+                canvas.FillPath(brush, path);
+            }
+            float scale = canvas.DpiX / 96f;
+            float x = (group ? 15 : 34) * scale, y = row.Top + row.Height / 2f;
+            if (group)
+            {
+                using (var pen = new Pen(InterfaceStyle.Blend(ink, fill, 0.25f), 1.5f * scale)
+                    { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+                {
+                    float r = 4 * scale;
+                    var points = args.Node.IsExpanded
+                        ? new[] { new PointF(x - r, y - r / 2), new PointF(x, y + r / 2), new PointF(x + r, y - r / 2) }
+                        : new[] { new PointF(x - r / 2, y - r), new PointF(x + r / 2, y), new PointF(x - r / 2, y + r) };
+                    canvas.DrawLines(pen, points);
+                }
+            }
+            else
+            {
+                var note = (Note)args.Node.Tag;
+                var color = note.CustomBackground == 0 ? NoteStyle.GetPaper(note.Color).Accent : Color.FromArgb(note.CustomBackground);
+                using (var dot = new SolidBrush(InterfaceStyle.Blend(color, ink, 0.22f)))
+                    canvas.FillEllipse(dot, x - 3 * scale, y - 3 * scale, 6 * scale, 6 * scale);
+            }
+            int start = (int)Math.Round((group ? 29 : 48) * scale);
+            var text = new Rectangle(start, row.Top, Math.Max(0, row.Width - start - 8), row.Height);
+            TextRenderer.DrawText(canvas, args.Node.Text, notes.Font, text, ink,
+                TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
         }
 
         public void RefreshNotes()
@@ -152,7 +206,8 @@ namespace PersonalStickyNote
             foreach (var group in groups)
             {
                 signature.Add(group.Id + "|" + group.Name);
-                foreach (var note in matched[group.Id]) signature.Add(note.Id + "|" + Preview(note));
+                foreach (var note in matched[group.Id])
+                    signature.Add(note.Id + "|" + note.Color + "|" + note.CustomBackground + "|" + Preview(note));
             }
             int count = matched.Sum(group => group.Count());
             footer.Text = saveError.Length != 0 ? saveError :
@@ -222,6 +277,14 @@ namespace PersonalStickyNote
         private void OpenNodeMenu(TreeNode node, Point point)
         {
             var menu = new ContextMenuStrip();
+            menu.Items.Add("新建分组…", null, (sender, args) => EditGroup(null));
+            if (node == null)
+            {
+                menu.Items.Add("新建便笺", null, (sender, args) => NewNote(Guid.Empty));
+                ShowMenu(menu, notes, point);
+                return;
+            }
+            menu.Items.Add(new ToolStripSeparator());
             var note = node.Tag as Note;
             if (note != null)
             {
@@ -310,7 +373,7 @@ namespace PersonalStickyNote
             else
             {
                 dropGroup = target;
-                target.BackColor = NoteStyle.ColorFrom(session.Dark ? 0x57482a : 0xffe49c);
+                notes.Invalidate();
             }
             if (Environment.TickCount - lastScroll < 110 || notes.TopNode == null) return;
             lastScroll = Environment.TickCount;
@@ -324,8 +387,8 @@ namespace PersonalStickyNote
         {
             SendMessage(notes.Handle, 0x111a, IntPtr.Zero, IntPtr.Zero);
             if (dropGroup == null) return;
-            dropGroup.BackColor = Color.Empty;
             dropGroup = null;
+            notes.Invalidate();
         }
 
         private void DropNote(object sender, DragEventArgs args)
@@ -344,55 +407,32 @@ namespace PersonalStickyNote
             if (moved != null) notes.SelectedNode = moved;
         }
 
-        private void OpenSettings()
+        public void OpenSettings()
         {
-            var menu = new ContextMenuStrip();
-            FillSettings(menu.Items);
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("退出个人便签", null, (sender, args) => session.Quit());
-            ShowMenu(menu, settings, new Point(0, settings.Height));
-        }
-
-        public void FillSettings(ToolStripItemCollection items)
-        {
-            var theme = new ToolStripMenuItem("外观");
-            foreach (var pair in new[] { "system|跟随系统", "light|浅色", "dark|深色" })
+            session.ShowList(openNotebook: false);
+            if (settingsView == null)
             {
-                string[] parts = pair.Split('|');
-                var item = new ToolStripMenuItem(parts[1]) { Checked = session.Book.Theme == parts[0] };
-                item.Click += (sender, args) => { session.Book.Theme = parts[0]; session.ApplySettings(); };
-                theme.DropDownItems.Add(item);
+                settingsView = new SettingsView(session, this);
+                Controls.Add(settingsView);
+                Controls.SetChildIndex(settingsView, Controls.GetChildIndex(layout));
+                settingsView.ApplyTheme(BackColor, ForeColor);
             }
-            items.Add(theme);
-            items.Add("默认配色…", null, (sender, args) => session.ConfigurePalette());
-            var deletion = new ToolStripMenuItem("删除前确认") { Checked = session.Book.ConfirmDelete };
-            deletion.Click += (sender, args) => { session.Book.ConfirmDelete = !session.Book.ConfirmDelete; session.Changed(); };
-            items.Add(deletion);
-            items.Add(new ToolStripSeparator());
-            bool startup = DesktopIntegration.StartsWithWindows;
-            var startupItem = new ToolStripMenuItem("登录 Windows 后自动启动") { Checked = startup };
-            startupItem.Click += (sender, args) =>
-            {
-                if (startup || Confirm("允许个人便签在你登录 Windows 后自动启动，并恢复上次打开的便笺吗？"))
-                    TryDesktopAction(() => DesktopIntegration.SetStartup(!startup));
-            };
-            items.Add(startupItem);
-            items.Add("创建桌面快捷方式", null, (sender, args) => TryDesktopAction(() =>
-            {
-                DesktopIntegration.CreateDesktopShortcut();
-                MessageBox.Show(this, "已创建桌面快捷方式「个人便签」。", Program.Name);
-            }));
-            items.Add(new ToolStripSeparator());
-            items.Add("检查更新…", null, (sender, args) => session.CheckForUpdates());
-            items.Add("GitHub 更新访问…", null, (sender, args) =>
-            {
-                session.ShowList();
-                session.Updates.ConfigureAccess(this);
-            });
-            items.Add(new ToolStripMenuItem("版本 " + AppUpdates.DisplayVersion) { Enabled = false });
+            layout.Hide();
+            settingsView.Show();
         }
 
-        private bool Confirm(string message)
+        public void ShowNotebook()
+        {
+            if (settingsView != null)
+            {
+                Controls.Remove(settingsView);
+                settingsView.Dispose();
+                settingsView = null;
+            }
+            layout.Show();
+        }
+
+        public bool Confirm(string message)
         {
             return MessageBox.Show(this, message, Program.Name, MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) == DialogResult.Yes;
@@ -400,11 +440,10 @@ namespace PersonalStickyNote
 
         private void ShowMenu(ContextMenuStrip menu, Control anchor, Point point)
         {
-            menu.Closed += (sender, args) => BeginInvoke(new Action(menu.Dispose));
-            menu.Show(anchor, point);
+            PresentMenu(menu, anchor, point);
         }
 
-        private void TryDesktopAction(Action action)
+        public void TryDesktopAction(Action action)
         {
             try { action(); }
             catch (Exception error)
@@ -415,7 +454,15 @@ namespace PersonalStickyNote
         }
 
         public void SetSaveError(string message) { saveError = message; RefreshNotes(); }
-        public void FocusSearch() { search.Focus(); search.SelectAll(); }
+        public void FocusSearch() { ShowNotebook(); search.Focus(); search.SelectAll(); }
+        public void RefreshShortcutLabels()
+        {
+            PinShortcut = session.Shortcuts.Label(ShortcutAction.Pin);
+            RefreshPin();
+            if (search.IsHandleCreated)
+                SendMessage(search.Handle, 0x1501, IntPtr.Zero,
+                    "搜索名称和正文（" + session.Shortcuts.Label(ShortcutAction.Search) + "）");
+        }
         private void RememberPosition() { NoteStyle.Remember(this, session.Book.ListPosition, session); }
         protected override void PinChanged(bool pinned) { session.Book.ListPinned = pinned; session.Changed(); }
         protected override void OnFormClosing(FormClosingEventArgs args) { session.CloseList(args); base.OnFormClosing(args); }
@@ -424,18 +471,22 @@ namespace PersonalStickyNote
         {
             var selected = notes.SelectedNode;
             var note = selected == null ? null : selected.Tag as Note;
-            switch (key)
+            switch (session.Shortcuts.Find(key, false))
             {
-                case Keys.Control | Keys.N: NewNote(SelectedGroup); return true;
-                case Keys.Control | Keys.F: FocusSearch(); return true;
-                case Keys.Control | Keys.W: Close(); return true;
-                case Keys.Control | Keys.Shift | Keys.P: TogglePin(); return true;
-                case Keys.Escape: if (search.Focused) { search.Clear(); return true; } break;
-                case Keys.Enter: if (note != null) { session.Open(note); return true; } break;
-                case Keys.Delete: if (notes.Focused && note != null) { session.Delete(note, this); return true; } break;
-                case Keys.Control | Keys.Tab: session.Cycle(this, false); return true;
-                case Keys.Control | Keys.Shift | Keys.Tab: session.Cycle(this, true); return true;
+                case ShortcutAction.New: ShowNotebook(); NewNote(SelectedGroup); return true;
+                case ShortcutAction.OpenList: ShowNotebook(); return true;
+                case ShortcutAction.Search: FocusSearch(); return true;
+                case ShortcutAction.Close: Close(); return true;
+                case ShortcutAction.Delete: if (settingsView == null && note != null) session.Delete(note, this); return true;
+                case ShortcutAction.Pin: TogglePin(); return true;
+                case ShortcutAction.Next: session.Cycle(this, false); return true;
+                case ShortcutAction.Previous: session.Cycle(this, true); return true;
             }
+            if (key == Keys.Escape && settingsView != null) { ShowNotebook(); return true; }
+            if (key == Keys.Escape && search.Focused) { search.Clear(); return true; }
+            if (key == Keys.Enter && settingsView == null && note != null && (notes.Focused || search.Focused))
+            { session.Open(note); return true; }
+            if (key == Keys.Delete && notes.Focused && note != null) { session.Delete(note, this); return true; }
             return base.ProcessCmdKey(ref message, key);
         }
     }

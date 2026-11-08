@@ -71,7 +71,7 @@ namespace PersonalStickyNote
 
         public static Button Button(string text, int width, string description = null)
         {
-            var button = new Button
+            var button = new SoftButton
             {
                 Text = text, Width = width, Height = 30, FlatStyle = FlatStyle.Flat,
                 UseVisualStyleBackColor = false, Margin = new Padding(0, 0, 4, 0),
