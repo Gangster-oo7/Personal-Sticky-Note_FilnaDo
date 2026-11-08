@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Cache;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
@@ -15,10 +16,10 @@ namespace PersonalStickyNote
     internal sealed class AppUpdates
     {
         private const string Repository = "Gangster-oo7/Personal-Sticky-Note_FilnaDo";
-        private const string Api = "https://api.github.com/repos/" + Repository + "/";
+        private const string RawUpdates = "https://raw.githubusercontent.com/" + Repository + "/main/updates/";
         private const string StagePrefix = ".personal-sticky-update-";
         private const int MaximumExe = 8 * 1024 * 1024;
-        private const int MaximumJson = 12 * 1024 * 1024;
+        private const int MaximumManifest = 64 * 1024;
         private static readonly Version Current = typeof(AppUpdates).Assembly.GetName().Version;
         private readonly NoteSession session;
         private bool checking;
@@ -64,8 +65,8 @@ namespace PersonalStickyNote
 
         private static Manifest LoadManifest()
         {
-            var entry = Request<GitBlob>("contents/updates/version.json?ref=main");
-            return ParseManifest(Encoding.UTF8.GetString(DecodeBlob(entry)));
+            var bytes = Request("version.json?from=" + DisplayVersion, MaximumManifest);
+            return ParseManifest(Encoding.UTF8.GetString(bytes));
         }
 
         internal static Manifest ParseManifest(string json)
@@ -73,7 +74,7 @@ namespace PersonalStickyNote
             var manifest = new JavaScriptSerializer().Deserialize<Manifest>(json);
             Version version;
             if (manifest == null || !Version.TryParse(manifest.version, out version) ||
-                version.Revision < 0 || !IsHex(manifest.sha256, 64) || !IsHex(manifest.blob, 40) ||
+                version.Revision < 0 || !IsHex(manifest.sha256, 64) ||
                 manifest.size <= 0 || manifest.size > MaximumExe)
                 throw new InvalidDataException(L.T("仓库版本清单无效。"));
             manifest.ReleaseVersion = version;
@@ -82,7 +83,7 @@ namespace PersonalStickyNote
 
         private static byte[] Download(Manifest manifest)
         {
-            var binary = DecodeBlob(Request<GitBlob>("git/blobs/" + manifest.blob));
+            var binary = Request("PersonalStickyNote.exe?v=" + manifest.ReleaseVersion, manifest.size);
             using (var sha = SHA256.Create())
             {
                 var actual = BitConverter.ToString(sha.ComputeHash(binary)).Replace("-", "");
@@ -92,12 +93,12 @@ namespace PersonalStickyNote
             return binary;
         }
 
-        private static T Request<T>(string relative)
+        private static byte[] Request(string file, int maximumBytes)
         {
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
-            var request = WebRequest.CreateHttp(Api + relative);
+            var request = WebRequest.CreateHttp(RawUpdates + file);
             request.AllowAutoRedirect = false;
-            request.Accept = "application/vnd.github+json";
+            request.CachePolicy = new RequestCachePolicy(RequestCacheLevel.Reload);
             request.UserAgent = "PersonalStickyNote/" + DisplayVersion;
             request.Timeout = request.ReadWriteTimeout = 15000;
             try
@@ -110,25 +111,21 @@ namespace PersonalStickyNote
                     int read;
                     while ((read = input.Read(buffer, 0, buffer.Length)) != 0)
                     {
-                        if (output.Length + read > MaximumJson) throw new InvalidDataException(L.T("更新响应超出大小限制。"));
+                        if (output.Length + read > maximumBytes) throw new InvalidDataException(L.T("更新响应超出大小限制。"));
                         output.Write(buffer, 0, read);
                     }
-                    return new JavaScriptSerializer { MaxJsonLength = MaximumJson }
-                        .Deserialize<T>(Encoding.UTF8.GetString(output.ToArray()));
+                    return output.ToArray();
                 }
             }
             catch (WebException error)
             {
-                if (error.Response != null) error.Response.Dispose();
+                using (var response = error.Response as HttpWebResponse)
+                {
+                    if (response != null)
+                        throw new IOException(L.T("GitHub 返回 HTTP {0}，请稍后重试。", (int)response.StatusCode), error);
+                }
                 throw new IOException(L.T("连接 GitHub 失败，请稍后重试。"), error);
             }
-        }
-
-        private static byte[] DecodeBlob(GitBlob blob)
-        {
-            if (blob == null || blob.encoding != "base64" || string.IsNullOrEmpty(blob.content))
-                throw new InvalidDataException(L.T("GitHub 未返回完整的更新内容。"));
-            return Convert.FromBase64String(blob.content);
         }
 
         private static bool IsHex(string text, int length)
@@ -305,15 +302,9 @@ namespace PersonalStickyNote
         {
             public string version { get; set; }
             public string sha256 { get; set; }
-            public string blob { get; set; }
             public int size { get; set; }
             [ScriptIgnore] public Version ReleaseVersion { get; set; }
         }
 
-        public sealed class GitBlob
-        {
-            public string encoding { get; set; }
-            public string content { get; set; }
-        }
     }
 }
