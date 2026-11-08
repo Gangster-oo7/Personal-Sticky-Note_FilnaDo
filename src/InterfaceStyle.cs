@@ -9,6 +9,12 @@ namespace PersonalStickyNote
 
     internal static class InterfaceStyle
     {
+        public static Color Accent(Color surface)
+        {
+            return NoteStyle.Contrast(surface).ToArgb() == Color.WhiteSmoke.ToArgb()
+                ? NoteStyle.ColorFrom(0x76d6ad) : NoteStyle.ColorFrom(0x258263);
+        }
+
         public static Color Blend(Color a, Color b, float proportion)
         {
             return Color.FromArgb((int)(a.R + (b.R - a.R) * proportion),

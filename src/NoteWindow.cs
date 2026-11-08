@@ -6,6 +6,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace PersonalStickyNote
@@ -49,6 +50,11 @@ namespace PersonalStickyNote
             editor.Font = new Font(Font.FontFamily, 11);
             if (!string.IsNullOrEmpty(note.Rtf)) editor.Rtf = note.Rtf;
             else editor.Text = note.PlainText;
+            if (editor.NormalizeTodoSpacing())
+            {
+                contentChanged = true;
+                session.Changed();
+            }
             editor.LinkClicked += (sender, args) =>
             {
                 Uri url;
@@ -83,7 +89,7 @@ namespace PersonalStickyNote
             formats[1].Font = new Font(Font, FontStyle.Italic);
             formats[2].Font = new Font(Font, FontStyle.Underline);
             formats[3].Font = new Font(Font, FontStyle.Strikeout);
-            todo = Tool("添加待办", editor.AddTodo, Glyph.Todo, true);
+            todo = Tool("待办列表", editor.ToggleTodoList, Glyph.Todo, true);
             var image = Tool("插入图片", PickImage, Glyph.Image);
             snap = Tool("磁吸", () => { Note.Snap = !Note.Snap; RefreshSnap(); session.Changed(); }, Glyph.Magnet, true);
             more = Tool("更多操作", OpenMenu, Glyph.More, true);
@@ -149,7 +155,7 @@ namespace PersonalStickyNote
             Describe(add, "新建便笺", ShortcutAction.New);
             Describe(undo, "撤销", ShortcutAction.Undo);
             Describe(redo, "重做", ShortcutAction.Redo);
-            Describe(todo, "添加待办", ShortcutAction.Todo);
+            Describe(todo, "切换待办列表", ShortcutAction.Todo);
             var actions = new[] { ShortcutAction.Bold, ShortcutAction.Italic, ShortcutAction.Underline,
                 ShortcutAction.Strike, ShortcutAction.Bullet };
             for (int i = 0; i < formats.Length; i++)
@@ -196,7 +202,8 @@ namespace PersonalStickyNote
             foreach (var pair in icons)
             {
                 var previous = pair.Key.Image;
-                pair.Key.Image = InterfaceStyle.Icon(pair.Value, foreground);
+                pair.Key.Image = InterfaceStyle.Icon(pair.Value,
+                    pair.Value == Glyph.Add ? InterfaceStyle.Accent(background) : foreground);
                 if (previous != null) previous.Dispose();
             }
             StyleCaption(surface, NoteStyle.Contrast(surface));
@@ -217,6 +224,7 @@ namespace PersonalStickyNote
             }
             undo.Enabled = editor.CanUndo;
             redo.Enabled = editor.CanRedo;
+            todo.Checked = editor.CurrentLineIsTodo;
         }
 
         private void Format(uint mask)
@@ -423,9 +431,11 @@ namespace PersonalStickyNote
             menu.Items.Add(new ToolStripSeparator());
             menu.Items.Add("剪切", null, (sender, args) => editor.Cut());
             menu.Items.Add("复制", null, (sender, args) => editor.Copy());
-            menu.Items.Add("粘贴", null, (sender, args) => editor.Paste());
+            menu.Items.Add("粘贴", null, (sender, args) => editor.PasteWithMarkdown(false));
             menu.Items.Add("删除所选内容", null, (sender, args) => editor.SelectedText = "");
             menu.Items.Add("全选", null, (sender, args) => editor.SelectAll());
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add("粘贴 Markdown 待办", null, (sender, args) => editor.PasteWithMarkdown(true));
             menu.Opening += (sender, args) =>
             {
                 menu.Items[0].Enabled = editor.CanUndo;
@@ -473,6 +483,7 @@ namespace PersonalStickyNote
             session.Changed();
             undo.Enabled = editor.CanUndo;
             redo.Enabled = editor.CanRedo;
+            todo.Checked = editor.CurrentLineIsTodo;
         }
 
         private void UndoEdit(bool redo)
@@ -526,7 +537,7 @@ namespace PersonalStickyNote
                 case ShortcutAction.Redo: UndoEdit(true); return true;
                 case ShortcutAction.Undo: UndoEdit(false); return true;
                 case ShortcutAction.Bullet: ToggleBullet(); return true;
-                case ShortcutAction.Todo: editor.AddTodo(); return true;
+                case ShortcutAction.Todo: editor.ToggleTodoList(); return true;
                 case ShortcutAction.ToggleTodo: editor.ToggleCurrentTodo(); return true;
                 case ShortcutAction.Pin: TogglePin(); return true;
                 case ShortcutAction.Next: session.Cycle(this, false); return true;
@@ -616,10 +627,25 @@ namespace PersonalStickyNote
 
         private const char OpenBox = '☐';
         private const char CheckedBox = '☑';
+        private const char TaskSpacer = '\u2002';
+        private const int StyledMarkerLength = 3;
+        private static readonly Regex MarkdownMarker = new Regex(@"^ {0,3}[-+*][ \t]+\[([ xX])\](?:[ \t]+|$)",
+            RegexOptions.Multiline | RegexOptions.CultureInvariant);
+        private string paragraphs;
+        private int pressedMarker = -1;
+        private int hoveredMarker = -1;
+
+        private string Paragraphs { get { return paragraphs ?? (paragraphs = Text); } }
+
+        public bool CurrentLineIsTodo
+        {
+            get { return IsTodo(Paragraphs, LineStart(Paragraphs, SelectionStart)); }
+        }
 
         private static int LineStart(string text, int index)
         {
-            return index == 0 ? 0 : text.LastIndexOf('\n', index - 1) + 1;
+            int end = Math.Min(index, text.Length);
+            return end <= 0 ? 0 : text.LastIndexOf('\n', end - 1) + 1;
         }
 
         private static bool IsTodo(string text, int start)
@@ -628,23 +654,72 @@ namespace PersonalStickyNote
                 text[start + 1] == ' ';
         }
 
-        public void AddTodo()
+        private static int MarkerLength(string text, int start)
         {
-            string text = Text;
-            int start = LineStart(text, SelectionStart);
-            if (IsTodo(text, start)) return;
-            int selection = SelectionStart, length = SelectionLength;
-            Select(start, 0);
-            if (SelectionBullet) SelectionBullet = false;
-            SelectedText = OpenBox + " ";
-            Select(selection + 2, length);
+            return start + 2 < text.Length && text[start + 2] == TaskSpacer ? StyledMarkerLength : 2;
         }
 
-        public void ToggleCurrentTodo() { ToggleTodo(LineStart(Text, SelectionStart)); }
+        private static string TaskPrefix(char marker) { return marker + " " + TaskSpacer; }
+
+        public bool NormalizeTodoSpacing()
+        {
+            string text = Paragraphs;
+            var missing = new System.Collections.Generic.List<int>();
+            for (int start = 0; start < text.Length;)
+            {
+                if (IsTodo(text, start) && MarkerLength(text, start) == 2) missing.Add(start + 2);
+                int end = text.IndexOf('\n', start);
+                if (end < 0) break;
+                start = end + 1;
+            }
+            if (missing.Count == 0) return false;
+            int selectionStart = SelectionStart, selectionEnd = selectionStart + SelectionLength;
+            for (int i = missing.Count - 1; i >= 0; i--)
+            {
+                int position = missing[i];
+                Select(position, 0);
+                SelectedText = TaskSpacer.ToString();
+                if (selectionStart >= position) selectionStart++;
+                if (selectionEnd >= position) selectionEnd++;
+            }
+            Select(selectionStart, selectionEnd - selectionStart);
+            return true;
+        }
+
+        public void ToggleTodoList()
+        {
+            string text = Paragraphs;
+            int selectionStart = SelectionStart, selectionEnd = selectionStart + SelectionLength;
+            int last = LineStart(text, Math.Max(selectionStart, selectionEnd - 1));
+            var lines = new System.Collections.Generic.List<int> { LineStart(text, selectionStart) };
+            while (lines[lines.Count - 1] < last)
+                lines.Add(text.IndexOf('\n', lines[lines.Count - 1]) + 1);
+            bool remove = lines.All(start => IsTodo(text, start));
+            for (int i = lines.Count - 1; i >= 0; i--)
+            {
+                int start = lines[i];
+                if (!remove && IsTodo(text, start)) continue;
+                int length = remove ? MarkerLength(text, start) : StyledMarkerLength;
+                Select(start, remove ? length : 0);
+                if (!remove && SelectionBullet) SelectionBullet = false;
+                SelectedText = remove ? "" : TaskPrefix(OpenBox);
+                selectionStart = MoveSelection(selectionStart, start, length, remove);
+                selectionEnd = MoveSelection(selectionEnd, start, length, remove);
+            }
+            Select(selectionStart, selectionEnd - selectionStart);
+        }
+
+        private static int MoveSelection(int offset, int start, int length, bool remove)
+        {
+            if (offset < start) return offset;
+            return remove ? Math.Max(start, offset - length) : offset + length;
+        }
+
+        public void ToggleCurrentTodo() { ToggleTodo(LineStart(Paragraphs, SelectionStart)); }
 
         private void ToggleTodo(int index)
         {
-            var text = Text;
+            var text = Paragraphs;
             if (!IsTodo(text, index)) return;
             int start = SelectionStart, length = SelectionLength;
             Select(index, 1);
@@ -652,42 +727,218 @@ namespace PersonalStickyNote
             Select(start, length);
         }
 
-        protected override void OnMouseDown(MouseEventArgs args)
+        internal static string ConvertMarkdownTasks(string input, bool includeFirstLine)
         {
-            if (args.Button == MouseButtons.Left)
+            string normalized = input.Replace("\r\n", "\n").Replace('\r', '\n');
+            return MarkdownMarker.Replace(normalized, marker => marker.Index == 0 && !includeFirstLine
+                ? marker.Value : TaskPrefix(marker.Groups[1].Value == " " ? OpenBox : CheckedBox));
+        }
+
+        public void PasteWithMarkdown(bool forceText)
+        {
+            try
             {
-                string text = Text;
-                int start = LineStart(text, GetCharIndexFromPosition(args.Location));
-                if (IsTodo(text, start))
+                if (Clipboard.ContainsText() && (forceText || !Clipboard.ContainsData(DataFormats.Rtf)))
                 {
-                    var box = GetPositionFromCharIndex(start);
-                    var next = GetPositionFromCharIndex(start + 1);
-                    if (args.X >= box.X && args.X < next.X && args.Y >= box.Y && args.Y < box.Y + Font.Height)
+                    string text = Clipboard.GetText();
+                    bool atStart = SelectionStart == LineStart(Paragraphs, SelectionStart);
+                    string converted = ConvertMarkdownTasks(text, atStart);
+                    if (forceText || converted != text.Replace("\r\n", "\n").Replace('\r', '\n'))
                     {
-                        Focus();
-                        ToggleTodo(start);
+                        SelectedText = converted;
                         return;
                     }
                 }
             }
-            base.OnMouseDown(args);
+            catch (ExternalException) { }
+            if (forceText) return;
+            Paste();
+            NormalizeTodoSpacing();
+        }
+
+        protected override void OnKeyPress(KeyPressEventArgs args)
+        {
+            if (args.KeyChar == ' ' && SelectionLength == 0)
+            {
+                int caret = SelectionStart, start = LineStart(Paragraphs, caret);
+                if (caret - start <= 14)
+                {
+                    string prefix = Paragraphs.Substring(start, caret - start);
+                    var marker = MarkdownMarker.Match(prefix);
+                    if (marker.Success && marker.Length == prefix.Length && prefix.EndsWith("]", StringComparison.Ordinal))
+                    {
+                        Select(start, caret - start);
+                        SelectedText = ConvertMarkdownTasks(prefix, true);
+                        args.Handled = true;
+                        return;
+                    }
+                }
+            }
+            base.OnKeyPress(args);
+        }
+
+        protected override void OnTextChanged(EventArgs args)
+        {
+            paragraphs = null;
+            hoveredMarker = -1;
+            Invalidate();
+            base.OnTextChanged(args);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs args)
+        {
+            base.OnMouseMove(args);
+            int marker = TodoAt(args.Location);
+            if (hoveredMarker == marker) return;
+            hoveredMarker = marker;
+            Cursor = marker < 0 ? Cursors.IBeam : Cursors.Hand;
+            Invalidate();
+        }
+
+        protected override void OnMouseLeave(EventArgs args)
+        {
+            base.OnMouseLeave(args);
+            hoveredMarker = -1;
+            Cursor = Cursors.IBeam;
+            Invalidate();
+        }
+
+        private int TodoAt(Point point)
+        {
+            int start = LineStart(Paragraphs, GetCharIndexFromPosition(point));
+            if (!IsTodo(Paragraphs, start)) return -1;
+            var marker = MarkerArea(start);
+            marker.Width = Math.Min(marker.Width, Font.Height + 4);
+            return marker.Contains(point) ? start : -1;
+        }
+
+        private Rectangle MarkerArea(int start)
+        {
+            Point origin = GetPositionFromCharIndex(start);
+            int content = start + MarkerLength(Paragraphs, start);
+            Point next = GetPositionFromCharIndex(content);
+            int width = next.Y == origin.Y && next.X > origin.X
+                ? next.X - origin.X : GetPositionFromCharIndex(content - 1).X - origin.X + Font.Height / 2;
+            if (width <= 1) return Rectangle.Empty;
+            int following = GetFirstCharIndexFromLine(GetLineFromCharIndex(start) + 1);
+            int height = following >= 0 ? GetPositionFromCharIndex(following).Y - origin.Y : 0;
+            if (height <= 0) height = Math.Max(Font.Height, (int)Math.Ceiling(width * 1.4));
+            return new Rectangle(origin.X, origin.Y, width, height);
+        }
+
+        protected override void WndProc(ref Message message)
+        {
+            int id = message.Msg;
+            if (id == 0x0201 || id == 0x0202 || id == 0x0203) // WM_LBUTTONDOWN, UP, DBLCLK
+            {
+                long coordinates = message.LParam.ToInt64();
+                int marker = TodoAt(new Point((short)coordinates, (short)(coordinates >> 16)));
+                if (id == 0x0201 && marker >= 0)
+                {
+                    Focus();
+                    pressedMarker = marker;
+                    Capture = true;
+                    return;
+                }
+                if (id == 0x0202 && pressedMarker >= 0)
+                {
+                    int pressed = pressedMarker;
+                    pressedMarker = -1;
+                    Capture = false;
+                    if (pressed == marker) ToggleTodo(marker);
+                    return;
+                }
+                if (id == 0x0203 && marker >= 0) return;
+            }
+            if (id == 0x0215) pressedMarker = -1; // WM_CAPTURECHANGED
+            base.WndProc(ref message);
+            if (id == 0x000f && IsHandleCreated) // WM_PAINT
+                using (var canvas = CreateGraphics()) PaintTodoBoxes(canvas);
+            if (id == 0x0318 && message.WParam != IntPtr.Zero) // WM_PRINTCLIENT
+                using (var canvas = Graphics.FromHdc(message.WParam)) PaintTodoBoxes(canvas);
+        }
+
+        private void PaintTodoBoxes(Graphics canvas)
+        {
+            string text = Paragraphs;
+            if (text.Length == 0 || ClientSize.Height <= 0) return;
+            int first = LineStart(text, GetCharIndexFromPosition(Point.Empty));
+            int last = GetCharIndexFromPosition(new Point(0, ClientSize.Height - 1));
+            canvas.SmoothingMode = SmoothingMode.AntiAlias;
+            Color accent = InterfaceStyle.Accent(BackColor);
+            int selectionStart = SelectionStart, selectionEnd = selectionStart + SelectionLength;
+            int preferred = Math.Max(11, (int)Math.Round(14 * canvas.DpiX / 96f));
+            for (int start = first; start <= last;)
+            {
+                if (IsTodo(text, start))
+                {
+                    Rectangle area = MarkerArea(start);
+                    if (area.Width >= 9 && area.IntersectsWith(ClientRectangle))
+                    {
+                        bool selected = start >= selectionStart && start < selectionEnd;
+                        bool done = text[start] == CheckedBox;
+                        Color background = selected ? SystemColors.Highlight : BackColor;
+                        int size = Math.Min(preferred, Math.Min(area.Width - 2, area.Height - 2));
+                        var box = new Rectangle(area.Left + 1,
+                            area.Top + (area.Height - size) / 2, size, size);
+                        using (var clear = new SolidBrush(background)) canvas.FillRectangle(clear, area);
+                        using (var path = InterfaceStyle.Rounded(box, 3))
+                        using (var fill = new SolidBrush(done ? accent : InterfaceStyle.Blend(background, accent,
+                            start == hoveredMarker ? 0.20f : 0.025f)))
+                        using (var border = new Pen(done || start == hoveredMarker ? accent :
+                            InterfaceStyle.Blend(background, NoteStyle.Contrast(background), 0.43f), 1.15f))
+                        {
+                            canvas.FillPath(fill, path);
+                            canvas.DrawPath(border, path);
+                        }
+                        if (done)
+                        {
+                            using (var mark = new Pen(NoteStyle.Contrast(accent), 1.45f)
+                                { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+                                canvas.DrawLines(mark, new[] { new PointF(box.X + size * 0.23f, box.Y + size * 0.51f),
+                                    new PointF(box.X + size * 0.44f, box.Y + size * 0.71f),
+                                    new PointF(box.X + size * 0.78f, box.Y + size * 0.30f) });
+                        }
+                    }
+                }
+                int lineEnd = text.IndexOf('\n', start);
+                if (lineEnd < 0) break;
+                start = lineEnd + 1;
+            }
         }
 
         protected override bool ProcessCmdKey(ref Message message, Keys key)
         {
-            if (key == Keys.Enter && SelectionLength == 0)
+            if (key == (Keys.Control | Keys.V))
             {
-                string text = Text;
+                PasteWithMarkdown(false);
+                return true;
+            }
+            if ((key == Keys.Enter || key == Keys.Back || key == Keys.Delete || key == Keys.Home) && SelectionLength == 0)
+            {
+                string text = Paragraphs;
                 int caret = SelectionStart, start = LineStart(text, caret);
-                if (IsTodo(text, start) && caret >= start + 2)
+                if (IsTodo(text, start))
                 {
-                    if (caret == start + 2 && (caret == text.Length || text[caret] == '\n'))
+                    int length = MarkerLength(text, start);
+                    int content = start + length;
+                    int end = text.IndexOf('\n', content);
+                    if (end < 0) end = text.Length;
+                    if (key == Keys.Home && GetLineFromCharIndex(start) == GetLineFromCharIndex(caret))
+                    { Select(content, 0); return true; }
+                    if ((key == Keys.Back && caret == content) || (key == Keys.Delete && caret == start) ||
+                        (key == Keys.Enter && string.IsNullOrWhiteSpace(text.Substring(content, end - content))))
                     {
-                        Select(start, 2);
+                        Select(start, length);
                         SelectedText = "";
+                        return true;
                     }
-                    else SelectedText = "\n" + OpenBox + " ";
-                    return true;
+                    if (key == Keys.Enter)
+                    {
+                        if (caret < content) Select(content, 0);
+                        SelectedText = "\n" + TaskPrefix(OpenBox);
+                        return true;
+                    }
                 }
             }
             return base.ProcessCmdKey(ref message, key);

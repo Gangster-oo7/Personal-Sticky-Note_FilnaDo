@@ -7,16 +7,16 @@ namespace PersonalStickyNote
 {
     internal abstract class CaptionWindow : Form
     {
-        private readonly Panel caption = new Panel { Dock = DockStyle.Top, Height = 33 };
+        private readonly Panel caption = new Panel { Dock = DockStyle.Top, Height = 37 };
         private readonly Label captionText = new Label { Dock = DockStyle.Fill,
             TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(4, 0, 0, 0),
             AutoEllipsis = true };
-        private readonly PictureBox icon = new PictureBox { Dock = DockStyle.Left, Width = 27,
+        private readonly PictureBox icon = new PictureBox { Dock = DockStyle.Left, Width = 30,
             SizeMode = PictureBoxSizeMode.CenterImage, AccessibleName = Program.Name };
-        private readonly SoftButton pin = (SoftButton)NoteStyle.Button("", 34, "置顶");
-        private readonly SoftButton minimize = (SoftButton)NoteStyle.Button("", 33, "最小化");
-        private readonly SoftButton maximize = (SoftButton)NoteStyle.Button("", 33, "最大化");
-        private readonly SoftButton close = (SoftButton)NoteStyle.Button("", 33, "关闭");
+        private readonly SoftButton pin = (SoftButton)NoteStyle.Button("", 35, "置顶");
+        private readonly SoftButton minimize = (SoftButton)NoteStyle.Button("", 34, "最小化");
+        private readonly SoftButton maximize = (SoftButton)NoteStyle.Button("", 34, "最大化");
+        private readonly SoftButton close = (SoftButton)NoteStyle.Button("", 34, "关闭");
         private readonly ToolTip tips = new ToolTip();
         private Color captionInk;
         private Rectangle normalBounds;
@@ -32,6 +32,17 @@ namespace PersonalStickyNote
         [DllImport("user32.dll")]
         private static extern IntPtr SendMessage(IntPtr handle, int message, IntPtr wParam, IntPtr lParam);
 
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var parameters = base.CreateParams;
+                parameters.Style &= ~0x00c00000; // WS_CAPTION
+                parameters.ExStyle &= ~0x00000100; // WS_EX_WINDOWEDGE
+                return parameters;
+            }
+        }
+
         protected CaptionWindow()
         {
             Padding = new Padding(5);
@@ -39,7 +50,7 @@ namespace PersonalStickyNote
             minimize.Symbol = Glyph.Minimize;
             close.Symbol = Glyph.Close;
             caption.Controls.Add(captionText);
-            using (var small = new Icon(NoteStyle.AppIcon, new Size(17, 17))) icon.Image = small.ToBitmap();
+            using (var small = new Icon(NoteStyle.AppIcon, new Size(16, 16))) icon.Image = small.ToBitmap();
             caption.Controls.Add(icon);
             foreach (var button in new[] { pin, minimize, maximize, close })
             {
@@ -73,7 +84,7 @@ namespace PersonalStickyNote
         private void UpdateCorners()
         {
             if (WindowState != FormWindowState.Normal || Width < 20 || Height < 20) { Region = null; return; }
-            using (var path = InterfaceStyle.Rounded(new Rectangle(Point.Empty, Size), Math.Max(8, Padding.Left * 2)))
+            using (var path = InterfaceStyle.Rounded(new Rectangle(Point.Empty, Size), Math.Max(10, Padding.Left * 2)))
                 Region = new Region(path);
         }
         protected virtual void OnMoveCompleted() { }
@@ -107,7 +118,7 @@ namespace PersonalStickyNote
 
         protected void StyleCaption(Color surface, Color ink)
         {
-            caption.BackColor = surface;
+            caption.BackColor = captionText.BackColor = icon.BackColor = surface;
             captionText.ForeColor = captionInk = ink;
             foreach (var button in new[] { minimize, maximize, close })
             {
@@ -131,7 +142,8 @@ namespace PersonalStickyNote
         {
             pin.AccessibleName = TopMost ? "取消置顶" : "窗口置顶";
             pin.Selected = TopMost;
-            pin.BackColor = caption.BackColor;
+            pin.BackColor = TopMost ? InterfaceStyle.Blend(caption.BackColor, NoteStyle.ColorFrom(0x399c78), 0.19f)
+                : caption.BackColor;
             pin.ForeColor = captionInk;
             pin.Invalidate();
             tips.SetToolTip(pin, pin.AccessibleName + "（" + PinShortcut + "）");
@@ -173,7 +185,7 @@ namespace PersonalStickyNote
                 long command = message.WParam.ToInt64() & 0xfff0;
                 if (command == 0xf020 || command == 0xf030) normalBounds = Bounds; // SC_MINIMIZE / SC_MAXIMIZE
             }
-            if (message.Msg == 0x0083 && message.WParam != IntPtr.Zero) // WM_NCCALCSIZE
+            if (message.Msg == 0x0083) // WM_NCCALCSIZE, both forms start with the client rectangle.
             {
                 if (IsZoomed(message.HWnd))
                 {
@@ -186,6 +198,12 @@ namespace PersonalStickyNote
                 message.Result = IntPtr.Zero;
                 return;
             }
+            if (message.Msg == 0x0085) // WM_NCPAINT
+            {
+                message.Result = IntPtr.Zero;
+                return;
+            }
+            if (message.Msg == 0x0086) message.LParam = new IntPtr(-1); // WM_NCACTIVATE without native repaint
             base.WndProc(ref message);
             if (message.Msg == 0x0232) // WM_EXITSIZEMOVE
             {

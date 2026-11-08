@@ -20,6 +20,8 @@ namespace PersonalStickyNote
         private readonly Panel searchFrame = new Panel { Dock = DockStyle.Fill,
             Padding = new Padding(9, 6, 9, 0), Margin = new Padding(0, 0, 0, 8) };
         private readonly Label footer = new Label { Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft };
+        private readonly Label heading = new Label { Text = "便笺", Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft };
         private readonly Button create = NoteStyle.Button("＋  新建便笺", 124);
         private readonly Button settings = NoteStyle.Button("设置", 62);
         private readonly TableLayoutPanel layout;
@@ -46,22 +48,27 @@ namespace PersonalStickyNote
 
             layout = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 4, ColumnCount = 1,
                 Padding = new Padding(14, 12, 14, 5) };
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 39));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
-            var actions = new FlowLayoutPanel { Dock = DockStyle.Fill, WrapContents = false, Margin = Padding.Empty };
-            actions.Controls.AddRange(new Control[] { create, settings });
+            var top = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+            heading.Font = new Font(Font.FontFamily, 15, FontStyle.Bold);
+            var actions = new FlowLayoutPanel { Dock = DockStyle.Right, WrapContents = false, Width = 195,
+                FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 4, 0, 0) };
+            actions.Controls.AddRange(new Control[] { settings, create });
+            top.Controls.Add(heading);
+            top.Controls.Add(actions);
             create.Click += (sender, args) => NewNote(SelectedGroup);
             settings.Click += (sender, args) => OpenSettings();
-            layout.Controls.Add(actions, 0, 0);
+            layout.Controls.Add(top, 0, 0);
             search.BorderStyle = BorderStyle.None;
             searchFrame.Controls.Add(search);
             searchFrame.Paint += (sender, args) =>
             {
                 args.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
                 using (var fill = new SolidBrush(search.BackColor))
-                using (var path = InterfaceStyle.Rounded(searchFrame.ClientRectangle, 7))
+                using (var path = InterfaceStyle.Rounded(searchFrame.ClientRectangle, 8))
                     args.Graphics.FillPath(fill, path);
             };
             layout.Controls.Add(searchFrame, 0, 1);
@@ -108,7 +115,7 @@ namespace PersonalStickyNote
             {
                 RefreshShortcutLabels();
                 using (var graphics = CreateGraphics())
-                    notes.ItemHeight = (int)Math.Round(32 * graphics.DpiY / 96f);
+                    notes.ItemHeight = (int)Math.Round(34 * graphics.DpiY / 96f);
             };
             ApplyTheme();
             RefreshNotes();
@@ -136,15 +143,16 @@ namespace PersonalStickyNote
                 session.Book.ListCustomColor, session.Dark);
             ForeColor = notes.ForeColor = NoteStyle.Contrast(BackColor);
             searchFrame.BackColor = BackColor;
-            search.BackColor = InterfaceStyle.Blend(BackColor, ForeColor, 0.065f);
+            search.BackColor = InterfaceStyle.Blend(BackColor, ForeColor, 0.047f);
             search.ForeColor = NoteStyle.Contrast(search.BackColor);
             create.BackColor = session.Book.ListCustomColor == 0
-                ? NoteStyle.GetPaper(session.Book.ListPaper).Accent
+                ? InterfaceStyle.Blend(BackColor, NoteStyle.GetPaper(session.Book.ListPaper).Accent, 0.58f)
                 : InterfaceStyle.Blend(BackColor, ForeColor, 0.22f);
             create.ForeColor = NoteStyle.Contrast(create.BackColor);
             settings.BackColor = InterfaceStyle.Blend(BackColor, ForeColor, 0.07f);
             settings.ForeColor = NoteStyle.Contrast(settings.BackColor);
-            StyleCaption(BackColor, ForeColor);
+            footer.ForeColor = InterfaceStyle.Blend(ForeColor, BackColor, 0.30f);
+            StyleCaption(InterfaceStyle.Blend(BackColor, ForeColor, 0.027f), ForeColor);
             if (settingsView != null) settingsView.ApplyTheme(BackColor, ForeColor);
             notes.Invalidate();
         }
@@ -157,7 +165,7 @@ namespace PersonalStickyNote
             bool selected = args.Node == notes.SelectedNode;
             Color ink = notes.ForeColor;
             Color paper = notes.BackColor;
-            Color fill = selected || args.Node == dropGroup ? InterfaceStyle.Blend(paper, ink, 0.12f)
+            Color fill = selected || args.Node == dropGroup ? InterfaceStyle.Blend(paper, InterfaceStyle.Accent(paper), 0.16f)
                 : group ? InterfaceStyle.Blend(paper, ink, 0.035f) : paper;
             using (var backdrop = new SolidBrush(paper)) canvas.FillRectangle(backdrop, row);
             using (var brush = new SolidBrush(fill))
@@ -188,9 +196,22 @@ namespace PersonalStickyNote
                     canvas.FillEllipse(dot, x - 3 * scale, y - 3 * scale, 6 * scale, 6 * scale);
             }
             int start = (int)Math.Round((group ? 29 : 48) * scale);
-            var text = new Rectangle(start, row.Top, Math.Max(0, row.Width - start - 8), row.Height);
-            TextRenderer.DrawText(canvas, args.Node.Text, notes.Font, text, ink,
+            int countWidth = group ? (int)Math.Round(40 * scale) : 8;
+            var text = new Rectangle(start, row.Top, Math.Max(0, row.Width - start - countWidth), row.Height);
+            string label = group ? ((NoteGroup)args.Node.Tag).Name : args.Node.Text;
+            TextRenderer.DrawText(canvas, label, notes.Font, text, ink,
                 TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
+            if (group)
+            {
+                var badge = new Rectangle(row.Right - countWidth + 2, row.Top + row.Height / 5,
+                    countWidth - 12, row.Height * 3 / 5);
+                using (var shape = InterfaceStyle.Rounded(badge, 8))
+                using (var brush = new SolidBrush(InterfaceStyle.Blend(fill, ink, 0.06f)))
+                    canvas.FillPath(brush, shape);
+                TextRenderer.DrawText(canvas, args.Node.Nodes.Count.ToString(), notes.Font, badge,
+                    InterfaceStyle.Blend(ink, fill, 0.24f), TextFormatFlags.HorizontalCenter |
+                    TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+            }
         }
 
         public void RefreshNotes()

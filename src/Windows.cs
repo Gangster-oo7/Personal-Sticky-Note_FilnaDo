@@ -25,7 +25,7 @@ namespace PersonalStickyNote
         public static readonly Icon AppIcon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         public static readonly Paper[] Papers =
         {
-            new Paper("yellow", "黄色", 0xfff6cc, 0x38301f, 0xf5d76e),
+            new Paper("yellow", "黄色", 0xfffae6, 0x34301f, 0xf5d76e),
             new Paper("green", "绿色", 0xe4f7da, 0x263725, 0x9cdd85),
             new Paper("pink", "粉色", 0xffe5ef, 0x402930, 0xf4a5c6),
             new Paper("purple", "紫色", 0xf1e7ff, 0x342942, 0xcbb2f1),
@@ -45,7 +45,7 @@ namespace PersonalStickyNote
             return Papers.FirstOrDefault(p => p.Id == id) ?? Papers[0];
         }
 
-        public static readonly Paper Neutral = new Paper("default", "中性", 0xfbfaF7, 0x232323, 0xf5d76e);
+        public static readonly Paper Neutral = new Paper("default", "中性", 0xfcfbf8, 0x222625, 0xf5d76e);
 
         public static Color Background(string paper, int custom, bool dark)
         {

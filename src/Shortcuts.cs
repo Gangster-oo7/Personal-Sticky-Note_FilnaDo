@@ -49,7 +49,7 @@ namespace PersonalStickyNote
             new Command(ShortcutAction.Underline, "下划线", Ctrl | Keys.U, true),
             new Command(ShortcutAction.Strike, "删除线", Ctrl | Keys.T, true),
             new Command(ShortcutAction.Bullet, "项目符号", CtrlShift | Keys.L, true),
-            new Command(ShortcutAction.Todo, "添加待办", CtrlShift | Keys.J, true),
+            new Command(ShortcutAction.Todo, "切换待办列表", CtrlShift | Keys.J, true),
             new Command(ShortcutAction.ToggleTodo, "切换待办状态", CtrlShift | Keys.K, true),
             new Command(ShortcutAction.Undo, "撤销", Ctrl | Keys.Z, true),
             new Command(ShortcutAction.Redo, "重做", Ctrl | Keys.Y, true)
