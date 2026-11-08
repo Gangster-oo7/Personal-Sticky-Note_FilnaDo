@@ -488,7 +488,9 @@ namespace PersonalStickyNote
     {
         private const string BodyFace = "Microsoft YaHei UI";
         private const int BodyHeight = 220; // 11 pt in twips.
-        private const uint BodyMask = 0xA8000000; // CFM_FACE | CFM_SIZE | CFM_CHARSET
+        private const string TaskFace = "Segoe UI Symbol";
+        private const int TaskHeight = 300; // 15 pt in twips.
+        private const uint FontMask = 0xA8000000; // CFM_FACE | CFM_SIZE | CFM_CHARSET
         private const int GetLanguageOptions = 0x0400 + 121;
         private const int SetLanguageOptions = 0x0400 + 120;
         private const int AutoKeyboard = 0x0001;
@@ -521,26 +523,7 @@ namespace PersonalStickyNote
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, IntPtr value);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, ref TextRange range);
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, ref CharacterRange range);
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
-        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, ref Point point);
-        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr window, int message, ref Point point, IntPtr index);
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct TextRange
-        {
-            public int Start, End;
-            public IntPtr Buffer;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct CharacterRange
-        {
-            public int Start, End;
-        }
 
         private const int GetCharacterFormat = 0x0400 + 58;
         private const int SetCharacterFormat = 0x0400 + 68;
@@ -570,7 +553,7 @@ namespace PersonalStickyNote
 
         private void SetBodyFont(int scope)
         {
-            var format = new CharacterFormat { Size = FormatSize, Mask = BodyMask, Height = BodyHeight,
+            var format = new CharacterFormat { Size = FormatSize, Mask = FontMask, Height = BodyHeight,
                 FaceName = BodyFace, Charset = 1 };
             // Setting the default takes zero. Selection changes also keep the current keyboard layout.
             SendMessage(Handle, SetCharacterFormat, new IntPtr(scope == 0 ? 0 : scope | 0x20), ref format);
@@ -579,8 +562,27 @@ namespace PersonalStickyNote
         public bool NormalizeBodyFont()
         {
             SetBodyFont(0);
-            if (TextLength == 0) return false;
-            return NormalizeFontRange(0, TextLength);
+            return NormalizeNoteFonts(0, TextLength);
+        }
+
+        private bool NormalizeNoteFonts(int start, int end)
+        {
+            string text = Paragraphs;
+            int bodyStart = start;
+            bool changed = false;
+            for (int line = LineStart(text, start); line < end;)
+            {
+                if (line >= start && IsTodo(text, line))
+                {
+                    changed |= NormalizeFontRange(bodyStart, line - bodyStart);
+                    changed |= NormalizeTaskMarker(line, text[line]);
+                    bodyStart = line + 1;
+                }
+                int newline = text.IndexOf('\n', line);
+                if (newline < 0) break;
+                line = newline + 1;
+            }
+            return NormalizeFontRange(bodyStart, end - bodyStart) || changed;
         }
 
         private bool NormalizeFontRange(int start, int length)
@@ -637,7 +639,6 @@ namespace PersonalStickyNote
             RegexOptions.Multiline | RegexOptions.CultureInvariant);
         private string paragraphs;
         private int pressedMarker = -1;
-        private int hoveredMarker = -1;
 
         private string Paragraphs { get { return paragraphs ?? (paragraphs = Text); } }
 
@@ -664,6 +665,57 @@ namespace PersonalStickyNote
         }
 
         private static string TaskPrefix(char marker) { return marker + " " + TaskSpacer; }
+
+        private bool NormalizeTaskMarker(int index, char marker)
+        {
+            int caret = SelectionStart, length = SelectionLength;
+            Select(index, 1);
+            var format = GetFormat();
+            bool changed = format.FaceName != TaskFace || format.Height != TaskHeight;
+            if (changed) ReplaceWithTaskRtf(MarkerRtf(marker), format);
+            Select(caret, length);
+            return changed;
+        }
+
+        private static string MarkerRtf(char marker)
+        {
+            return @"{\f1\fs" + (TaskHeight / 10) + @"\b0\i0\ulnone\strike0\u" + (int)marker + "?}";
+        }
+
+        private void InsertTaskText(string text, bool atLineStart)
+        {
+            var rtf = new StringBuilder();
+            for (int i = 0; i < text.Length; i++)
+            {
+                char ch = text[i];
+                if (atLineStart && IsTodo(text, i)) rtf.Append(MarkerRtf(ch));
+                else if (ch == '\n') rtf.Append(@"\par ");
+                else if (ch == '\t') rtf.Append(@"\tab ");
+                else if (ch >= ' ' && ch <= '~' && ch != '\\' && ch != '{' && ch != '}') rtf.Append(ch);
+                else rtf.Append(@"\u").Append((short)ch).Append('?');
+                atLineStart = ch == '\n';
+            }
+            ReplaceWithTaskRtf(rtf.ToString(), GetFormat());
+        }
+
+        private void ReplaceWithTaskRtf(string content, CharacterFormat format)
+        {
+            // An explicit font in the RTF keeps these glyphs out of the emoji fallback font.
+            var rtf = new StringBuilder(@"{\rtf1\ansi\uc1{\fonttbl{\f0\fnil ");
+            rtf.Append(BodyFace).Append(@";}{\f1\fnil\fcharset0 ").Append(TaskFace).Append(";}}");
+            const uint colorMask = 0x40000000;
+            if ((format.Mask & colorMask) != 0 && (format.Effects & colorMask) == 0)
+            {
+                var ink = ColorTranslator.FromWin32(format.TextColor);
+                rtf.AppendFormat(@"{{\colortbl ;\red{0}\green{1}\blue{2};}}\cf1", ink.R, ink.G, ink.B);
+            }
+            uint effects = format.Mask & format.Effects;
+            if ((effects & 1) != 0) rtf.Append(@"\b");
+            if ((effects & 2) != 0) rtf.Append(@"\i");
+            if ((effects & 4) != 0) rtf.Append(@"\ul");
+            if ((effects & 8) != 0) rtf.Append(@"\strike");
+            SelectedRtf = rtf.Append(@"\f0\fs").Append(BodyHeight / 10).Append(' ').Append(content).Append('}').ToString();
+        }
 
         public bool NormalizeTodoSpacing()
         {
@@ -706,11 +758,13 @@ namespace PersonalStickyNote
                 int length = remove ? MarkerLength(text, start) : StyledMarkerLength;
                 Select(start, remove ? length : 0);
                 if (!remove && SelectionBullet) SelectionBullet = false;
-                SelectedText = remove ? "" : TaskPrefix(OpenBox);
+                if (remove) SelectedText = "";
+                else InsertTaskText(TaskPrefix(OpenBox), true);
                 selectionStart = MoveSelection(selectionStart, start, length, remove);
                 selectionEnd = MoveSelection(selectionEnd, start, length, remove);
             }
             Select(selectionStart, selectionEnd - selectionStart);
+            if (remove && selectionStart == selectionEnd) SetBodyFont(1);
         }
 
         private static int MoveSelection(int offset, int start, int length, bool remove)
@@ -727,7 +781,7 @@ namespace PersonalStickyNote
             if (!IsTodo(text, index)) return;
             int start = SelectionStart, length = SelectionLength;
             Select(index, 1);
-            SelectedText = (text[index] == OpenBox ? CheckedBox : OpenBox).ToString();
+            ReplaceWithTaskRtf(MarkerRtf(text[index] == OpenBox ? CheckedBox : OpenBox), GetFormat());
             Select(start, length);
         }
 
@@ -749,7 +803,7 @@ namespace PersonalStickyNote
                     string converted = ConvertMarkdownTasks(text, atStart);
                     if (forceText || converted != text.Replace("\r\n", "\n").Replace('\r', '\n'))
                     {
-                        SelectedText = converted;
+                        InsertTaskText(converted, atStart);
                         return;
                     }
                 }
@@ -758,7 +812,7 @@ namespace PersonalStickyNote
             if (forceText) return;
             int start = SelectionStart;
             Paste();
-            NormalizeFontRange(start, SelectionStart - start);
+            NormalizeNoteFonts(start, SelectionStart);
             NormalizeTodoSpacing();
         }
 
@@ -774,7 +828,7 @@ namespace PersonalStickyNote
                     if (marker.Success && marker.Length == prefix.Length && prefix.EndsWith("]", StringComparison.Ordinal))
                     {
                         Select(start, caret - start);
-                        SelectedText = ConvertMarkdownTasks(prefix, true);
+                        InsertTaskText(ConvertMarkdownTasks(prefix, true), true);
                         args.Handled = true;
                         return;
                     }
@@ -786,7 +840,6 @@ namespace PersonalStickyNote
         protected override void OnTextChanged(EventArgs args)
         {
             paragraphs = null;
-            hoveredMarker = -1;
             base.OnTextChanged(args);
         }
 
@@ -794,37 +847,28 @@ namespace PersonalStickyNote
         {
             base.OnMouseMove(args);
             if (IsImeComposing) return;
-            int marker = TodoAt(args.Location);
-            if (hoveredMarker == marker) return;
-            hoveredMarker = marker;
-            Cursor = marker < 0 ? Cursors.IBeam : Cursors.Hand;
-            Invalidate();
+            Cursor = TodoAt(args.Location) < 0 ? Cursors.IBeam : Cursors.Hand;
         }
 
         protected override void OnMouseLeave(EventArgs args)
         {
             base.OnMouseLeave(args);
-            hoveredMarker = -1;
             Cursor = Cursors.IBeam;
-            Invalidate();
         }
 
         private int TodoAt(Point point)
         {
             int start = LineStart(Paragraphs, GetCharIndexFromPosition(point));
             if (!IsTodo(Paragraphs, start)) return -1;
-            var marker = MarkerArea(Paragraphs, start);
-            marker.Width = Math.Min(marker.Width, Font.Height + 4);
+            var marker = MarkerArea(start);
             return marker.Contains(point) ? start : -1;
         }
 
-        private Rectangle MarkerArea(string text, int start)
+        private Rectangle MarkerArea(int start)
         {
             Point origin = CharacterPosition(start);
-            int content = start + MarkerLength(text, start);
-            Point next = CharacterPosition(content);
-            int width = next.Y == origin.Y && next.X > origin.X
-                ? next.X - origin.X : CharacterPosition(content - 1).X - origin.X + Font.Height / 2;
+            Point next = CharacterPosition(start + 1);
+            int width = next.Y == origin.Y ? next.X - origin.X : Font.Height;
             if (width <= 1) return Rectangle.Empty;
             int following = GetFirstCharIndexFromLine(GetLineFromCharIndex(start) + 1);
             int height = following >= 0 ? CharacterPosition(following).Y - origin.Y : 0;
@@ -832,30 +876,11 @@ namespace PersonalStickyNote
             return new Rectangle(origin.X, origin.Y, width, height);
         }
 
-        // The WinForms text and position accessors can finish an active IME composition.
-        // These Rich Edit messages read the live text and layout without committing it.
-        private string CompositionText()
-        {
-            int length = TextLength;
-            var range = new TextRange { End = length, Buffer = Marshal.AllocHGlobal((length + 1) * 2) };
-            try
-            {
-                int copied = SendMessage(Handle, 0x044b, IntPtr.Zero, ref range).ToInt32(); // EM_GETTEXTRANGE
-                return Marshal.PtrToStringUni(range.Buffer, copied).Replace('\r', '\n');
-            }
-            finally { Marshal.FreeHGlobal(range.Buffer); }
-        }
-
         private Point CharacterPosition(int index)
         {
             var point = Point.Empty;
             SendMessage(Handle, 0x00d6, ref point, new IntPtr(index)); // EM_POSFROMCHAR
             return point;
-        }
-
-        private int CharacterAt(Point point)
-        {
-            return SendMessage(Handle, 0x00d7, IntPtr.Zero, ref point).ToInt32(); // EM_CHARFROMPOS
         }
 
         protected override void WndProc(ref Message message)
@@ -888,63 +913,8 @@ namespace PersonalStickyNote
             if (imeComposing && (id == 0x010e || id == 0x0008)) // WM_IME_ENDCOMPOSITION / WM_KILLFOCUS
             {
                 imeComposing = false;
-                Invalidate();
                 var ended = CompositionEnded;
                 if (ended != null) ended(this, EventArgs.Empty);
-            }
-            if (id == 0x0318 && message.WParam != IntPtr.Zero) // WM_PRINTCLIENT
-                using (var canvas = Graphics.FromHdc(message.WParam)) PaintTodoBoxes(canvas);
-            if (id == 0x000f && IsHandleCreated) // WM_PAINT after the native body paint
-                using (var canvas = CreateGraphics()) PaintTodoBoxes(canvas);
-        }
-
-        private void PaintTodoBoxes(Graphics canvas)
-        {
-            string text = IsImeComposing ? CompositionText() : Paragraphs;
-            if (text.Length == 0 || ClientSize.Height <= 0) return;
-            int first = LineStart(text, Math.Max(0, CharacterAt(Point.Empty)));
-            int last = CharacterAt(new Point(0, ClientSize.Height - 1));
-            canvas.SmoothingMode = SmoothingMode.AntiAlias;
-            Color accent = InterfaceStyle.Accent(BackColor);
-            var selection = new CharacterRange();
-            SendMessage(Handle, 0x0434, IntPtr.Zero, ref selection); // EM_EXGETSEL
-            int preferred = Math.Max(11, (int)Math.Round(14 * canvas.DpiX / 96f));
-            for (int start = first; start <= last;)
-            {
-                if (IsTodo(text, start))
-                {
-                    Rectangle area = MarkerArea(text, start);
-                    if (area.Width >= 9 && area.IntersectsWith(ClientRectangle))
-                    {
-                        bool selected = start >= selection.Start && start < selection.End;
-                        bool done = text[start] == CheckedBox;
-                        Color background = selected ? SystemColors.Highlight : BackColor;
-                        int size = Math.Min(preferred, Math.Min(area.Width - 2, area.Height - 2));
-                        var box = new Rectangle(area.Left + 1,
-                            area.Top + (area.Height - size) / 2, size, size);
-                        using (var clear = new SolidBrush(background)) canvas.FillRectangle(clear, area);
-                        using (var path = InterfaceStyle.Rounded(box, 3))
-                        using (var fill = new SolidBrush(done ? accent : InterfaceStyle.Blend(background, accent,
-                            start == hoveredMarker ? 0.20f : 0.025f)))
-                        using (var border = new Pen(done || start == hoveredMarker ? accent :
-                            InterfaceStyle.Blend(background, NoteStyle.Contrast(background), 0.43f), 1.15f))
-                        {
-                            canvas.FillPath(fill, path);
-                            canvas.DrawPath(border, path);
-                        }
-                        if (done)
-                        {
-                            using (var mark = new Pen(NoteStyle.Contrast(accent), 1.45f)
-                                { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
-                                canvas.DrawLines(mark, new[] { new PointF(box.X + size * 0.23f, box.Y + size * 0.51f),
-                                    new PointF(box.X + size * 0.44f, box.Y + size * 0.71f),
-                                    new PointF(box.X + size * 0.78f, box.Y + size * 0.30f) });
-                        }
-                    }
-                }
-                int lineEnd = text.IndexOf('\n', start);
-                if (lineEnd < 0) break;
-                start = lineEnd + 1;
             }
         }
 
@@ -973,12 +943,13 @@ namespace PersonalStickyNote
                     {
                         Select(start, length);
                         SelectedText = "";
+                        SetBodyFont(1);
                         return true;
                     }
                     if (key == Keys.Enter)
                     {
                         if (caret < content) Select(content, 0);
-                        SelectedText = "\n" + TaskPrefix(OpenBox);
+                        InsertTaskText("\n" + TaskPrefix(OpenBox), false);
                         return true;
                     }
                 }

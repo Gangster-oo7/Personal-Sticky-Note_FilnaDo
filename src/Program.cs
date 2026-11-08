@@ -11,7 +11,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.6.2.0")]
+[assembly: System.Reflection.AssemblyVersion("1.6.3.0")]
 
 namespace PersonalStickyNote
 {
