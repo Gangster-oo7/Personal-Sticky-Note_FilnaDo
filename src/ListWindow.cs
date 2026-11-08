@@ -12,7 +12,7 @@ namespace PersonalStickyNote
     internal sealed class ListWindow : CaptionWindow
     {
         private readonly NoteSession session;
-        private readonly TreeView notes = new TreeView { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
+        private readonly TreeView notes = new PreviewTreeView { Dock = DockStyle.Fill, BorderStyle = BorderStyle.None,
             HideSelection = false, FullRowSelect = true, ShowLines = false, AllowDrop = true,
             ShowPlusMinus = false, ShowRootLines = false, DrawMode = TreeViewDrawMode.OwnerDrawAll,
             AccessibleName = "便笺和分组" };
@@ -274,13 +274,7 @@ namespace PersonalStickyNote
         private static string Preview(Note note)
         {
             if (!string.IsNullOrWhiteSpace(note.Title)) return note.Title;
-            string text = string.Join(" ", note.PlainText.Split((char[])null,
-                StringSplitOptions.RemoveEmptyEntries).Take(50));
-            if (text.Length > 72)
-            {
-                var preview = new StringInfo(text);
-                if (preview.LengthInTextElements > 64) return preview.SubstringByTextElements(0, 64) + "…";
-            }
+            string text = string.Join(" ", note.PlainText.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
             if (text.Length != 0) return text;
             return note.Rtf.Contains(@"\pict") ? "图片便笺" : "空白便笺";
         }
@@ -509,6 +503,19 @@ namespace PersonalStickyNote
             { session.Open(note); return true; }
             if (key == Keys.Delete && notes.Focused && note != null) { session.Delete(note, this); return true; }
             return base.ProcessCmdKey(ref message, key);
+        }
+    }
+
+    internal sealed class PreviewTreeView : TreeView
+    {
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var parameters = base.CreateParams;
+                parameters.Style |= 0x8000; // TVS_NOHSCROLL, keeping vertical scrolling enabled.
+                return parameters;
+            }
         }
     }
 

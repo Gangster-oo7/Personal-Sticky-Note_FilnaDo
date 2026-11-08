@@ -23,6 +23,8 @@ namespace PersonalStickyNote
             new System.Collections.Generic.Dictionary<ToolStripButton, Glyph>();
         private readonly ToolStripButton[] formats;
         private readonly ToolStripButton add, more, snap, ink, undo, redo, todo;
+        private Color colorIconInk;
+        private Color colorIconUnderline;
         private bool contentChanged;
         private bool styling;
         public Note Note { get; private set; }
@@ -73,7 +75,9 @@ namespace PersonalStickyNote
             add = Tool("新建便笺", () => session.NewNote(Note.GroupId), Glyph.Add, true);
             undo = Tool("撤销", () => UndoEdit(false), Glyph.Undo);
             redo = Tool("重做", () => UndoEdit(true), Glyph.Redo);
-            ink = Tool("颜色 ▾", OpenInkMenu, essential: true);
+            ink = Tool("文字颜色", OpenInkMenu, essential: true);
+            ink.DisplayStyle = ToolStripItemDisplayStyle.Image;
+            ink.ImageScaling = ToolStripItemImageScaling.None;
             formats = new[]
             {
                 Tool("B", () => Format(1)),
@@ -213,6 +217,9 @@ namespace PersonalStickyNote
         {
             if (editor.IsImeComposing) return;
             var selected = editor.GetFormat();
+            const uint characterColor = 0x40000000; // CFM_COLOR / CFE_AUTOCOLOR
+            RefreshTextColor((selected.Mask & characterColor) != 0 && (selected.Effects & characterColor) == 0
+                ? ColorTranslator.FromWin32(selected.TextColor) : Color.FromArgb(Note.DefaultInk));
             for (int i = 0; i < formats.Length; i++)
             {
                 uint mask = (uint)(1 << i);
@@ -222,6 +229,19 @@ namespace PersonalStickyNote
             undo.Enabled = editor.CanUndo;
             redo.Enabled = editor.CanRedo;
             todo.Checked = editor.CurrentLineIsTodo;
+        }
+
+        private void RefreshTextColor(Color underline)
+        {
+            var foreground = ink.ForeColor;
+            int height = toolbar.ImageScalingSize.Height;
+            var previous = ink.Image;
+            if (previous != null && previous.Height == height && foreground == colorIconInk && underline == colorIconUnderline)
+                return;
+            ink.Image = InterfaceStyle.TextColorIcon(foreground, underline, height);
+            colorIconInk = foreground;
+            colorIconUnderline = underline;
+            if (previous != null) previous.Dispose();
         }
 
         private void Format(uint mask)
@@ -319,6 +339,7 @@ namespace PersonalStickyNote
         {
             editor.Focus();
             editor.SelectionColor = color;
+            RefreshTextColor(color);
             if (editor.SelectionLength != 0) Edited();
         }
 
@@ -418,8 +439,11 @@ namespace PersonalStickyNote
         protected override void Dispose(bool disposing)
         {
             if (disposing)
+            {
                 foreach (var button in icons.Keys)
                     if (button.Image != null) button.Image.Dispose();
+                if (ink != null && ink.Image != null) ink.Image.Dispose();
+            }
             base.Dispose(disposing);
         }
 

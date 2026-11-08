@@ -41,6 +41,26 @@ namespace PersonalStickyNote
             return image;
         }
 
+        public static Bitmap TextColorIcon(Color ink, Color underline, int height)
+        {
+            int width = (int)Math.Round(height * 28 / 18.0);
+            var image = new Bitmap(width, height);
+            using (var graphics = Graphics.FromImage(image))
+            using (var pen = new Pen(ink, 1.45f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+            using (var border = new SolidBrush(ink))
+            using (var color = new SolidBrush(underline))
+            {
+                graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                graphics.ScaleTransform(width / 28f, height / 18f);
+                graphics.DrawLines(pen, new[] { new PointF(3, 12), new PointF(8, 2.5f), new PointF(13, 12) });
+                graphics.DrawLine(pen, 5, 8.5f, 11, 8.5f);
+                graphics.FillRectangle(border, 2, 14, 12, 3);
+                graphics.FillRectangle(color, 2.65f, 14.55f, 10.7f, 1.9f);
+                graphics.DrawLines(pen, new[] { new PointF(19, 8), new PointF(22, 11), new PointF(25, 8) });
+            }
+            return image;
+        }
+
         public static void Draw(Graphics graphics, Glyph glyph, Color ink, Rectangle bounds)
         {
             var state = graphics.Save();
