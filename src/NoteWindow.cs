@@ -520,6 +520,41 @@ namespace PersonalStickyNote
             ref CharacterFormat format);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, IntPtr value);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, ref TextRange range);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, ref CharacterRange range);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, ref Point point);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr window, int message, ref Point point, IntPtr index);
+        [DllImport("user32.dll")]
+        private static extern bool GetUpdateRect(IntPtr window, IntPtr rect, bool erase);
+        [DllImport("user32.dll")]
+        private static extern IntPtr BeginPaint(IntPtr window, out PaintState state);
+        [DllImport("user32.dll")]
+        private static extern bool EndPaint(IntPtr window, ref PaintState state);
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TextRange
+        {
+            public int Start, End;
+            public IntPtr Buffer;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct CharacterRange
+        {
+            public int Start, End;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct PaintState
+        {
+            private IntPtr dc;
+            private int erase, left, top, right, bottom, restore, update;
+            [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)] private byte[] reserved;
+        }
 
         private const int GetCharacterFormat = 0x0400 + 58;
         private const int SetCharacterFormat = 0x0400 + 68;
@@ -617,6 +652,8 @@ namespace PersonalStickyNote
         private string paragraphs;
         private int pressedMarker = -1;
         private int hoveredMarker = -1;
+        private BufferedGraphicsContext checklistBuffer;
+        private bool paintChecklist;
 
         private string Paragraphs { get { return paragraphs ?? (paragraphs = Text); } }
 
@@ -800,21 +837,67 @@ namespace PersonalStickyNote
 
         private Rectangle MarkerArea(string text, int start)
         {
-            Point origin = GetPositionFromCharIndex(start);
+            Point origin = CharacterPosition(start);
             int content = start + MarkerLength(text, start);
-            Point next = GetPositionFromCharIndex(content);
+            Point next = CharacterPosition(content);
             int width = next.Y == origin.Y && next.X > origin.X
-                ? next.X - origin.X : GetPositionFromCharIndex(content - 1).X - origin.X + Font.Height / 2;
+                ? next.X - origin.X : CharacterPosition(content - 1).X - origin.X + Font.Height / 2;
             if (width <= 1) return Rectangle.Empty;
             int following = GetFirstCharIndexFromLine(GetLineFromCharIndex(start) + 1);
-            int height = following >= 0 ? GetPositionFromCharIndex(following).Y - origin.Y : 0;
+            int height = following >= 0 ? CharacterPosition(following).Y - origin.Y : 0;
             if (height <= 0) height = Math.Max(Font.Height, (int)Math.Ceiling(width * 1.4));
             return new Rectangle(origin.X, origin.Y, width, height);
+        }
+
+        // The WinForms text and position accessors can finish an active IME composition.
+        // These Rich Edit messages read the live text and layout without committing it.
+        private string CompositionText()
+        {
+            int length = TextLength;
+            var range = new TextRange { End = length, Buffer = Marshal.AllocHGlobal((length + 1) * 2) };
+            try
+            {
+                int copied = SendMessage(Handle, 0x044b, IntPtr.Zero, ref range).ToInt32(); // EM_GETTEXTRANGE
+                return Marshal.PtrToStringUni(range.Buffer, copied).Replace('\r', '\n');
+            }
+            finally { Marshal.FreeHGlobal(range.Buffer); }
+        }
+
+        private Point CharacterPosition(int index)
+        {
+            var point = Point.Empty;
+            SendMessage(Handle, 0x00d6, ref point, new IntPtr(index)); // EM_POSFROMCHAR
+            return point;
+        }
+
+        private int CharacterAt(Point point)
+        {
+            return SendMessage(Handle, 0x00d7, IntPtr.Zero, ref point).ToInt32(); // EM_CHARFROMPOS
         }
 
         protected override void WndProc(ref Message message)
         {
             int id = message.Msg;
+            if (id == 0x0014 && paintChecklist) // WM_ERASEBKGND, handled in the buffer
+            {
+                message.Result = new IntPtr(1);
+                return;
+            }
+            if (id == 0x000f && ClientSize.Width > 0 && ClientSize.Height > 0 && // WM_PAINT
+                GetUpdateRect(message.HWnd, IntPtr.Zero, false))
+            {
+                if (!imeComposing)
+                {
+                    string text = Paragraphs;
+                    paintChecklist = text.IndexOf(OpenBox) >= 0 || text.IndexOf(CheckedBox) >= 0;
+                }
+                if (paintChecklist)
+                {
+                    PaintBuffered(message.HWnd);
+                    message.Result = IntPtr.Zero;
+                    return;
+                }
+            }
             if (id == 0x010d) imeComposing = true; // WM_IME_STARTCOMPOSITION
             if (!IsImeComposing && (id == 0x0201 || id == 0x0202 || id == 0x0203)) // WM_LBUTTONDOWN, UP, DBLCLK
             {
@@ -839,7 +922,6 @@ namespace PersonalStickyNote
             }
             if (id == 0x0215) pressedMarker = -1; // WM_CAPTURECHANGED
             base.WndProc(ref message);
-            if (imeComposing && (id == 0x010d || id == 0x010f)) Invalidate(); // Native IME redraw
             if (imeComposing && (id == 0x010e || id == 0x0008)) // WM_IME_ENDCOMPOSITION / WM_KILLFOCUS
             {
                 imeComposing = false;
@@ -847,22 +929,50 @@ namespace PersonalStickyNote
                 var ended = CompositionEnded;
                 if (ended != null) ended(this, EventArgs.Empty);
             }
-            if (id == 0x000f && IsHandleCreated) // WM_PAINT
-                using (var canvas = CreateGraphics()) PaintTodoBoxes(canvas);
             if (id == 0x0318 && message.WParam != IntPtr.Zero) // WM_PRINTCLIENT
                 using (var canvas = Graphics.FromHdc(message.WParam)) PaintTodoBoxes(canvas);
         }
 
+        private void PaintBuffered(IntPtr window)
+        {
+            PaintState state;
+            var dc = BeginPaint(window, out state);
+            try
+            {
+                if (dc == IntPtr.Zero) return;
+                if (checklistBuffer == null) checklistBuffer = new BufferedGraphicsContext();
+                var capacity = checklistBuffer.MaximumBuffer;
+                if (capacity.Width <= ClientSize.Width || capacity.Height <= ClientSize.Height)
+                    checklistBuffer.MaximumBuffer = new Size(ClientSize.Width + 1, ClientSize.Height + 1);
+                using (var target = Graphics.FromHdc(dc))
+                using (var buffer = checklistBuffer.Allocate(target, ClientRectangle))
+                {
+                    var canvas = buffer.Graphics;
+                    canvas.Clear(BackColor);
+                    var destination = canvas.GetHdc();
+                    try
+                    {
+                        var print = Message.Create(window, 0x0318, destination, new IntPtr(4)); // WM_PRINTCLIENT, PRF_CLIENT
+                        base.WndProc(ref print);
+                    }
+                    finally { canvas.ReleaseHdc(destination); }
+                    PaintTodoBoxes(canvas);
+                    buffer.Render();
+                }
+            }
+            finally { EndPaint(window, ref state); }
+        }
+
         private void PaintTodoBoxes(Graphics canvas)
         {
-            // Composition can change the live layout without raising TextChanged.
-            string text = IsImeComposing ? Text : Paragraphs;
+            string text = IsImeComposing ? CompositionText() : Paragraphs;
             if (text.Length == 0 || ClientSize.Height <= 0) return;
-            int first = LineStart(text, GetCharIndexFromPosition(Point.Empty));
-            int last = GetCharIndexFromPosition(new Point(0, ClientSize.Height - 1));
+            int first = LineStart(text, Math.Max(0, CharacterAt(Point.Empty)));
+            int last = CharacterAt(new Point(0, ClientSize.Height - 1));
             canvas.SmoothingMode = SmoothingMode.AntiAlias;
             Color accent = InterfaceStyle.Accent(BackColor);
-            int selectionStart = SelectionStart, selectionEnd = selectionStart + SelectionLength;
+            var selection = new CharacterRange();
+            SendMessage(Handle, 0x0434, IntPtr.Zero, ref selection); // EM_EXGETSEL
             int preferred = Math.Max(11, (int)Math.Round(14 * canvas.DpiX / 96f));
             for (int start = first; start <= last;)
             {
@@ -871,7 +981,7 @@ namespace PersonalStickyNote
                     Rectangle area = MarkerArea(text, start);
                     if (area.Width >= 9 && area.IntersectsWith(ClientRectangle))
                     {
-                        bool selected = start >= selectionStart && start < selectionEnd;
+                        bool selected = start >= selection.Start && start < selection.End;
                         bool done = text[start] == CheckedBox;
                         Color background = selected ? SystemColors.Highlight : BackColor;
                         int size = Math.Min(preferred, Math.Min(area.Width - 2, area.Height - 2));
@@ -901,6 +1011,12 @@ namespace PersonalStickyNote
                 if (lineEnd < 0) break;
                 start = lineEnd + 1;
             }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && checklistBuffer != null) checklistBuffer.Dispose();
+            base.Dispose(disposing);
         }
 
         protected override bool ProcessCmdKey(ref Message message, Keys key)
