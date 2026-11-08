@@ -15,6 +15,8 @@ namespace PersonalStickyNote
         private readonly SoftButton shortcutTab = (SoftButton)NoteStyle.Button(L.T("快捷键"), 76);
         private readonly Button back = NoteStyle.Button("‹ " + L.T("返回列表"), 92);
         private readonly Label version = new Label { AutoSize = true };
+        private readonly Label updateStatus = new Label { AutoSize = true, Visible = false,
+            Padding = new Padding(8, 5, 8, 5), Margin = new Padding(0, 2, 0, 3), MaximumSize = new Size(260, 0) };
 
         public SettingsView(NoteSession session, ListWindow owner)
         {
@@ -60,6 +62,7 @@ namespace PersonalStickyNote
                 session.Notify(L.T("已创建桌面快捷方式。"));
             }));
             AddButton(L.T("检查更新…"), session.CheckForUpdates);
+            general.Controls.Add(updateStatus);
             version.Text = L.T("版本 {0}", AppUpdates.DisplayVersion);
             version.Margin = new Padding(3, 10, 3, 3);
             general.Controls.Add(version);
@@ -89,6 +92,15 @@ namespace PersonalStickyNote
             shortcutTab.Invalidate();
         }
 
+        public void ShowGeneral() { OpenTab(false); }
+
+        public void SetUpdateStatus(string message, bool scroll)
+        {
+            updateStatus.Text = message;
+            updateStatus.Visible = message.Length != 0;
+            if (scroll && updateStatus.Visible) general.ScrollControlIntoView(updateStatus);
+        }
+
         public void ApplyTheme(Color paper, Color ink)
         {
             BackColor = paper;
@@ -98,6 +110,8 @@ namespace PersonalStickyNote
             foreach (Control control in general.Controls)
                 if (control is Button) control.BackColor = field;
             version.ForeColor = InterfaceStyle.Blend(ink, paper, 0.27f);
+            updateStatus.BackColor = InterfaceStyle.Blend(paper, InterfaceStyle.Accent(paper), 0.15f);
+            updateStatus.ForeColor = NoteStyle.Contrast(updateStatus.BackColor);
             shortcuts.ApplyTheme(paper, ink);
         }
     }

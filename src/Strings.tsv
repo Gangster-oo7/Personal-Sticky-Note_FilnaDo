@@ -1,3 +1,4 @@
+检查更新失败。	Could not check for updates.	Impossible de vérifier les mises à jour.	No se pudieron comprobar las actualizaciones.	更新を確認できませんでした。	업데이트를 확인하지 못했습니다.
 正在检查更新。	Checking for updates…	Recherche de mises à jour…	Buscando actualizaciones…	更新を確認しています…	업데이트 확인 중…
 当前已是最新版本 {0}。	You’re using the latest version ({0}).	Vous utilisez la dernière version ({0}).	Ya usas la versión más reciente ({0}).	最新版（{0}）を使用しています。	최신 버전({0})을 사용 중입니다.
 发现版本 {0}。更新会先保存便笺，再重启程序。现在更新吗？	Version {0} is available. Your notes will be saved before the app restarts. Update now?	La version {0} est disponible. Vos notes seront enregistrées avant le redémarrage. Mettre à jour maintenant ?	La versión {0} está disponible. Se guardarán tus notas antes de reiniciar. ¿Actualizar ahora?	バージョン {0} が利用できます。付箋を保存してからアプリを再起動します。今すぐ更新しますか？	버전 {0}을 사용할 수 있습니다. 메모를 저장한 뒤 앱을 다시 시작합니다. 지금 업데이트할까요?

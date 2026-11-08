@@ -27,6 +27,7 @@ namespace PersonalStickyNote
         private readonly SoftButton language = (SoftButton)NoteStyle.Button("", 35);
         private readonly TableLayoutPanel layout;
         private SettingsView settingsView;
+        private string updateStatus;
         private bool saveError;
         private string[] rendered = new string[0];
         private bool refreshing;
@@ -464,7 +465,7 @@ namespace PersonalStickyNote
             if (moved != null) notes.SelectedNode = moved;
         }
 
-        public void OpenSettings()
+        public void OpenSettings(bool focusUpdate = false)
         {
             session.ShowList(openNotebook: false);
             if (settingsView == null)
@@ -476,6 +477,19 @@ namespace PersonalStickyNote
             }
             layout.Hide();
             settingsView.Show();
+            if (focusUpdate) settingsView.ShowGeneral();
+            settingsView.SetUpdateStatus(UpdateStatusText, focusUpdate);
+        }
+
+        private string UpdateStatusText
+        {
+            get { return updateStatus == null ? "" : L.T(updateStatus, AppUpdates.DisplayVersion); }
+        }
+
+        public void SetUpdateStatus(string key)
+        {
+            updateStatus = key;
+            if (settingsView != null) settingsView.SetUpdateStatus(UpdateStatusText, scroll: true);
         }
 
         public void ShowNotebook()

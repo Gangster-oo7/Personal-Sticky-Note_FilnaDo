@@ -32,19 +32,22 @@ namespace PersonalStickyNote
             CleanSuccessfulStages(Application.ExecutablePath);
         }
 
-        public async void Check(Form owner)
+        public async void Check(ListWindow owner)
         {
-            if (checking) { session.Notify(L.T("正在检查更新。")); return; }
+            if (checking) { owner.OpenSettings(focusUpdate: true); return; }
             checking = true;
             try
             {
+                owner.SetUpdateStatus("正在检查更新。");
+                owner.OpenSettings(focusUpdate: true);
                 var manifest = await Task.Run(() => LoadManifest());
                 if (owner.IsDisposed) return;
                 if (manifest.ReleaseVersion <= Current)
                 {
-                    session.Notify(L.T("当前已是最新版本 {0}。", DisplayVersion));
+                    owner.SetUpdateStatus("当前已是最新版本 {0}。");
                     return;
                 }
+                owner.SetUpdateStatus(null);
                 if (MessageBox.Show(owner, L.T("发现版本 {0}。更新会先保存便笺，再重启程序。现在更新吗？",
                     manifest.ReleaseVersion.ToString(3)), Program.Name,
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2) != DialogResult.Yes)
@@ -57,8 +60,11 @@ namespace PersonalStickyNote
             catch (Exception error)
             {
                 if (!owner.IsDisposed)
+                {
+                    owner.SetUpdateStatus("检查更新失败。");
                     MessageBox.Show(owner, L.T("更新未完成。\n\n") + error.Message, Program.Name,
                         MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
             }
             finally { checking = false; }
         }
