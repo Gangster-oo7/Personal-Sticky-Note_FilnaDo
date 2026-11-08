@@ -12,7 +12,7 @@
 - 通过便笺工具栏的 **… → 命名便笺** 编辑名称。列表优先显示名称，留空时显示正文预览。搜索同时匹配名称和正文，双击列表里的便笺即可打开。
 - 点击 **待办** 可将当前行或选中的多行转为待办，再点一次可去掉方框。点击方框切换完成状态。按回车续项，空项按回车退出待办。在待办正文起始处按退格可转为普通行。
 - 行首输入 `- [ ] ` 或 `- [x] ` 后会生成待办。右键 **粘贴 Markdown 待办** 可粘贴多行任务。
-- 点击 **字体** 直接展开字体列表，也可从该列表导入 TTF、OTF 或 TTC。**颜色** 提供文字颜色、便笺背景和自定义调色盘。选择的字体和文字颜色可应用到选中文字或接下来的输入。
+- 正文统一使用微软雅黑 UI 11 pt。**颜色** 提供文字颜色、便笺背景和自定义调色盘。文字颜色可应用到选中文字或接下来的输入。
 - 标题栏下方的一行工具栏包含新建、撤销、重做、文字格式、待办和磁吸等操作。窄窗口中可从工具栏末端的溢出菜单访问其他格式工具。**…** 菜单中可手写、涂画并插入结果。
 - **设置 → 默认配色** 可分别设置列表和新便笺的预设色系或自定义色。勾选「列表和新便笺使用同一色系」即可共用列表配色。已保存的便笺保留各自的颜色。
 - 圆角便笺的标题栏和工具栏持续显示。开启工具栏的磁铁图标后，拖动至屏幕边角或另一张便笺附近时会自动贴齐。
@@ -42,18 +42,18 @@
 powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-项目使用 C#、WinForms 和 Windows 自带的 .NET Framework 编译器，无需额外安装 NuGet 依赖。列表和分组界面在 `src/ListWindow.cs`，便笺编辑器在 `src/NoteWindow.cs`，标题栏在 `src/CaptionWindow.cs`，字体导入在 `src/NoteFonts.cs`，数据保存逻辑在 `src/NoteStore.cs`。
+项目使用 C#、WinForms 和 Windows 自带的 .NET Framework 编译器，无需额外安装 NuGet 依赖。列表和分组界面在 `src/ListWindow.cs`，便笺编辑器在 `src/NoteWindow.cs`，标题栏在 `src/CaptionWindow.cs`，数据保存逻辑在 `src/NoteStore.cs`。
 
 ## 检查和发布更新
 
 在列表的设置或托盘菜单点击 **检查更新**。当前版本显示在设置菜单底部。检查到当前已是最新版本时，程序会发出通知；发现新版时，确认后会保存便笺、替换当前 EXE 并重启。
 
-仓库为私有，检查更新需要有权读取该仓库的 GitHub 账号。在 GitHub 创建细粒度令牌，将仓库范围限定为 `Personal-Sticky-Note_FilnaDo`，仓库权限 **Contents** 选择 **Read-only**。在软件内的 **GitHub 更新访问** 输入令牌，Windows 会将它加密保存在当前账户。便笺、分组、字体和设置仍在本机。
+仓库为私有，检查更新需要有权读取该仓库的 GitHub 账号。在 GitHub 创建细粒度令牌，将仓库范围限定为 `Personal-Sticky-Note_FilnaDo`，仓库权限 **Contents** 选择 **Read-only**。在软件内的 **GitHub 更新访问** 输入令牌，Windows 会将它加密保存在当前账户。便笺、分组和设置保存在本机。
 
 发布下一版时，更新 `src/Program.cs` 的程序集版本，然后运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -PrepareUpdate`。把源码与生成的 `updates/version.json`、`updates/PersonalStickyNote.exe` 一起提交到 `main`。版本清单固定了 Git blob、大小和 SHA-256，客户端据此核验更新文件。使用较新的 EXE 时，保存它的目录需可写。
 
 ## 数据与功能范围
 
-便笺和分组自动保存到 `%LOCALAPPDATA%\PersonalStickyNote\notes.xml`，并保留上一版保存记录 `notes.xml.bak`。导入的字体保存在同一目录下的 `Fonts` 子目录。旧版便笺升级后会保留分组、内容和窗口设置。使用本地版无需登录任何账号。
+便笺和分组自动保存到 `%LOCALAPPDATA%\PersonalStickyNote\notes.xml`，并保留上一版保存记录 `notes.xml.bak`。旧版便笺升级后会保留分组、内容和窗口设置，正文会统一字体和字号。使用本地版无需登录任何账号。
 
 置顶适用于同一桌面的普通应用窗口。Windows 安全桌面、独占全屏及其他置顶窗口由系统管理。

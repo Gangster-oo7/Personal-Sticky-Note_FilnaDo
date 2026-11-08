@@ -22,7 +22,7 @@ namespace PersonalStickyNote
         private readonly System.Collections.Generic.Dictionary<ToolStripButton, Glyph> icons =
             new System.Collections.Generic.Dictionary<ToolStripButton, Glyph>();
         private readonly ToolStripButton[] formats;
-        private readonly ToolStripButton add, more, snap, font, fontSize, ink, undo, redo, todo;
+        private readonly ToolStripButton add, more, snap, ink, undo, redo, todo;
         private bool contentChanged;
         private bool styling;
         public Note Note { get; private set; }
@@ -47,10 +47,10 @@ namespace PersonalStickyNote
             editor.ScrollBars = RichTextBoxScrollBars.Vertical;
             editor.DetectUrls = true;
             editor.HideSelection = false;
-            editor.Font = new Font(Font.FontFamily, 11);
             if (!string.IsNullOrEmpty(note.Rtf)) editor.Rtf = note.Rtf;
             else editor.Text = note.PlainText;
-            if (editor.NormalizeTodoSpacing())
+            bool normalized = editor.NormalizeBodyFont();
+            if (editor.NormalizeTodoSpacing() || normalized)
             {
                 contentChanged = true;
                 session.Changed();
@@ -73,9 +73,6 @@ namespace PersonalStickyNote
             add = Tool("新建便笺", () => session.NewNote(Note.GroupId), Glyph.Add, true);
             undo = Tool("撤销", () => UndoEdit(false), Glyph.Undo);
             redo = Tool("重做", () => UndoEdit(true), Glyph.Redo);
-            font = Tool("字体 ▾", ChooseFont, essential: true);
-            fontSize = Tool("11 pt ▾", ChooseFontSize);
-            fontSize.AccessibleName = fontSize.ToolTipText = "字号";
             ink = Tool("颜色 ▾", OpenInkMenu, essential: true);
             formats = new[]
             {
@@ -93,7 +90,7 @@ namespace PersonalStickyNote
             var image = Tool("插入图片", PickImage, Glyph.Image);
             snap = Tool("磁吸", () => { Note.Snap = !Note.Snap; RefreshSnap(); session.Changed(); }, Glyph.Magnet, true);
             more = Tool("更多操作", OpenMenu, Glyph.More, true);
-            toolbar.Items.AddRange(new ToolStripItem[] { add, undo, redo, new ToolStripSeparator(), font, fontSize,
+            toolbar.Items.AddRange(new ToolStripItem[] { add, undo, redo, new ToolStripSeparator(),
                 formats[0], formats[1], formats[2], formats[3], ink, formats[4], todo, image, snap, more });
             RefreshShortcutLabels();
             Controls.Add(page);
@@ -104,6 +101,7 @@ namespace PersonalStickyNote
             editor.ClearUndo();
             editor.TextChanged += (sender, args) => { if (!styling) Edited(); };
             editor.SelectionChanged += (sender, args) => { if (!styling) RefreshTools(); };
+            editor.CompositionEnded += (sender, args) => RefreshTools();
             InstallEditorMenu();
             NoteStyle.Restore(this, note.Position);
             Shown += (sender, args) => { editor.Focus(); RefreshTools(); };
@@ -213,9 +211,8 @@ namespace PersonalStickyNote
 
         private void RefreshTools()
         {
+            if (editor.IsImeComposing) return;
             var selected = editor.GetFormat();
-            fontSize.Text = (selected.Mask & 0x80000000u) == 0
-                ? "字号 ▾" : Math.Round(selected.Height / 20m).ToString("0") + " pt ▾";
             for (int i = 0; i < formats.Length; i++)
             {
                 uint mask = (uint)(1 << i);
@@ -325,104 +322,6 @@ namespace PersonalStickyNote
             if (editor.SelectionLength != 0) Edited();
         }
 
-        private void ChooseFont()
-        {
-            var menu = new ContextMenuStrip();
-            var current = editor.GetFormat().FaceName;
-            var names = session.Fonts.Families();
-            var favorites = new[] { current, "微软雅黑", "Microsoft YaHei UI", "宋体", "SimSun", "仿宋", "FangSong",
-                "楷体", "KaiTi", "幼圆", "YouYuan", "黑体", "SimHei", "等线", "DengXian", "Segoe UI" }
-                .Where(name => names.Contains(name, StringComparer.OrdinalIgnoreCase))
-                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            var ordered = favorites.Concat(names).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            var panel = new Panel { Size = new Size(228, 244), Padding = new Padding(4) };
-            var filter = new TextBox { Dock = DockStyle.Top, AccessibleName = "搜索字体" };
-            var choices = new ListBox { Dock = DockStyle.Fill, IntegralHeight = false, AccessibleName = "字体列表" };
-            panel.Controls.Add(choices);
-            panel.Controls.Add(filter);
-            choices.Items.AddRange(ordered);
-            choices.SelectedIndex = Array.FindIndex(ordered, name => string.Equals(name, current, StringComparison.OrdinalIgnoreCase));
-            menu.Items.Add(new ToolStripControlHost(panel) { AutoSize = false, Size = panel.Size });
-            filter.TextChanged += (sender, args) =>
-            {
-                choices.BeginUpdate();
-                choices.Items.Clear();
-                choices.Items.AddRange(ordered.Where(name => name.IndexOf(filter.Text.Trim(),
-                    StringComparison.CurrentCultureIgnoreCase) >= 0).ToArray());
-                if (choices.Items.Count > 0) choices.SelectedIndex = 0;
-                choices.EndUpdate();
-            };
-            Action choose = () =>
-            {
-                var family = choices.SelectedItem as string;
-                if (family == null) return;
-                menu.Close();
-                ApplyFont(family);
-            };
-            choices.MouseUp += (sender, args) =>
-            {
-                if (args.Button == MouseButtons.Left && choices.IndexFromPoint(args.Location) >= 0) choose();
-            };
-            KeyEventHandler selectOnEnter = (sender, args) =>
-            {
-                if (args.KeyCode == Keys.Enter) { args.SuppressKeyPress = true; choose(); }
-                if (args.KeyCode == Keys.Down && sender == filter && choices.Items.Count > 0)
-                { choices.Focus(); args.SuppressKeyPress = true; }
-            };
-            choices.KeyDown += selectOnEnter;
-            filter.KeyDown += selectOnEnter;
-            choices.PreviewKeyDown += (sender, args) => { if (args.KeyCode == Keys.Enter) args.IsInputKey = true; };
-            filter.PreviewKeyDown += (sender, args) =>
-            {
-                if (args.KeyCode == Keys.Enter || args.KeyCode == Keys.Down) args.IsInputKey = true;
-            };
-            menu.Opened += (sender, args) => filter.Focus();
-            menu.Items.Add(new ToolStripSeparator());
-            menu.Items.Add("导入字体…", null, (sender, args) => ImportFont());
-            ShowMenu(menu, font);
-        }
-
-        private void ChooseFontSize()
-        {
-            var menu = new ContextMenuStrip();
-            int size = editor.GetFormat().Height;
-            foreach (int points in new[] { 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32 })
-            {
-                var item = new ToolStripMenuItem(points + " pt") { Checked = size == points * 20 };
-                item.Click += (sender, args) =>
-                {
-                    editor.Focus();
-                    editor.SetPointSize(points);
-                    if (editor.SelectionLength != 0) Edited();
-                    RefreshTools();
-                };
-                menu.Items.Add(item);
-            }
-            ShowMenu(menu, fontSize);
-        }
-
-        private void ApplyFont(string family)
-        {
-            editor.Focus();
-            editor.SetFace(family);
-            if (editor.SelectionLength != 0) Edited();
-        }
-
-        private void ImportFont()
-        {
-            using (var picker = new OpenFileDialog { Title = "导入字体", Filter = "字体文件|*.ttf;*.otf;*.ttc" })
-            {
-                if (picker.ShowDialog(this) != DialogResult.OK) return;
-                try
-                {
-                    var families = session.Fonts.Import(picker.FileName);
-                    if (families.Length == 1) ApplyFont(families[0]);
-                    else ChooseFont();
-                }
-                catch (Exception error) { ShowError("无法导入字体", error); }
-            }
-        }
-
         private void InstallEditorMenu()
         {
             var menu = new ContextMenuStrip();
@@ -481,6 +380,7 @@ namespace PersonalStickyNote
             contentChanged = true;
             Note.Updated = DateTime.UtcNow;
             session.Changed();
+            if (editor.IsImeComposing) return;
             undo.Enabled = editor.CanUndo;
             redo.Enabled = editor.CanRedo;
             todo.Checked = editor.CurrentLineIsTodo;
@@ -494,6 +394,8 @@ namespace PersonalStickyNote
             Edited();
             RefreshTools();
         }
+
+        public bool IsImeComposing { get { return editor.IsImeComposing; } }
 
         public void CaptureContent()
         {
@@ -523,6 +425,7 @@ namespace PersonalStickyNote
 
         protected override bool ProcessCmdKey(ref Message message, Keys key)
         {
+            if (editor.IsImeComposing) return base.ProcessCmdKey(ref message, key);
             switch (session.Shortcuts.Find(key, true))
             {
                 case ShortcutAction.New: session.NewNote(Note.GroupId); return true;
@@ -550,6 +453,25 @@ namespace PersonalStickyNote
 
     internal sealed class RichEditor : RichTextBox
     {
+        private const string BodyFace = "Microsoft YaHei UI";
+        private const int BodyHeight = 220; // 11 pt in twips.
+        private const uint BodyMask = 0xA8000000; // CFM_FACE | CFM_SIZE | CFM_CHARSET
+        private const int GetLanguageOptions = 0x0400 + 121;
+        private const int SetLanguageOptions = 0x0400 + 120;
+        private const int AutoKeyboard = 0x0001;
+        private const int AutoFont = 0x0002;
+        private const int NotifyDuringComposition = 0x0008;
+        private const int AutoFontSize = 0x0010;
+        private const int DualFont = 0x0080;
+        private bool imeComposing;
+        public bool IsImeComposing { get { return imeComposing; } }
+        public event EventHandler CompositionEnded;
+
+        public RichEditor()
+        {
+            Font = new Font(BodyFace, BodyHeight / 20f);
+        }
+
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         internal struct CharacterFormat
         {
@@ -563,6 +485,8 @@ namespace PersonalStickyNote
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags,
             ref CharacterFormat format);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, IntPtr value);
 
         private const int GetCharacterFormat = 0x0400 + 58;
         private const int SetCharacterFormat = 0x0400 + 68;
@@ -575,22 +499,48 @@ namespace PersonalStickyNote
             return format;
         }
 
+        protected override void OnHandleCreated(EventArgs args)
+        {
+            base.OnHandleCreated(args);
+            var options = SendMessage(Handle, GetLanguageOptions, IntPtr.Zero, IntPtr.Zero).ToInt32();
+            options &= ~(AutoKeyboard | AutoFont | AutoFontSize | DualFont | NotifyDuringComposition);
+            SendMessage(Handle, SetLanguageOptions, IntPtr.Zero, new IntPtr(options));
+            SetBodyFont(0);
+        }
+
         public void SetStyle(uint mask, bool enabled)
         {
             var format = new CharacterFormat { Size = FormatSize, Mask = mask, Effects = enabled ? mask : 0 };
             SendMessage(Handle, SetCharacterFormat, new IntPtr(1), ref format);
         }
 
-        public void SetFace(string family)
+        private void SetBodyFont(int scope)
         {
-            var format = new CharacterFormat { Size = FormatSize, Mask = 0x28000000, Charset = 1, FaceName = family };
-            SendMessage(Handle, SetCharacterFormat, new IntPtr(1), ref format);
+            var format = new CharacterFormat { Size = FormatSize, Mask = BodyMask, Height = BodyHeight,
+                FaceName = BodyFace, Charset = 1 };
+            // Setting the default takes zero. Selection changes also keep the current keyboard layout.
+            SendMessage(Handle, SetCharacterFormat, new IntPtr(scope == 0 ? 0 : scope | 0x20), ref format);
         }
 
-        public void SetPointSize(int points)
+        public bool NormalizeBodyFont()
         {
-            var format = new CharacterFormat { Size = FormatSize, Mask = 0x80000000, Height = points * 20 };
-            SendMessage(Handle, SetCharacterFormat, new IntPtr(1), ref format);
+            SetBodyFont(0);
+            if (TextLength == 0) return false;
+            return NormalizeFontRange(0, TextLength);
+        }
+
+        private bool NormalizeFontRange(int start, int length)
+        {
+            if (length <= 0) return false;
+            int caret = SelectionStart, selection = SelectionLength;
+            Select(start, length);
+            var format = GetFormat();
+            const uint faceAndSize = 0xA0000000;
+            bool change = (format.Mask & faceAndSize) != faceAndSize || format.Height != BodyHeight ||
+                !string.Equals(format.FaceName, BodyFace, StringComparison.OrdinalIgnoreCase);
+            if (change) SetBodyFont(1);
+            Select(caret, selection);
+            return change;
         }
 
         public void ReplaceDefaultInk(int oldInk, Color newInk)
@@ -752,13 +702,15 @@ namespace PersonalStickyNote
             }
             catch (ExternalException) { }
             if (forceText) return;
+            int start = SelectionStart;
             Paste();
+            NormalizeFontRange(start, SelectionStart - start);
             NormalizeTodoSpacing();
         }
 
         protected override void OnKeyPress(KeyPressEventArgs args)
         {
-            if (args.KeyChar == ' ' && SelectionLength == 0)
+            if (!IsImeComposing && args.KeyChar == ' ' && SelectionLength == 0)
             {
                 int caret = SelectionStart, start = LineStart(Paragraphs, caret);
                 if (caret - start <= 14)
@@ -788,6 +740,7 @@ namespace PersonalStickyNote
         protected override void OnMouseMove(MouseEventArgs args)
         {
             base.OnMouseMove(args);
+            if (IsImeComposing) return;
             int marker = TodoAt(args.Location);
             if (hoveredMarker == marker) return;
             hoveredMarker = marker;
@@ -829,7 +782,8 @@ namespace PersonalStickyNote
         protected override void WndProc(ref Message message)
         {
             int id = message.Msg;
-            if (id == 0x0201 || id == 0x0202 || id == 0x0203) // WM_LBUTTONDOWN, UP, DBLCLK
+            if (id == 0x010d) imeComposing = true; // WM_IME_STARTCOMPOSITION
+            if (!IsImeComposing && (id == 0x0201 || id == 0x0202 || id == 0x0203)) // WM_LBUTTONDOWN, UP, DBLCLK
             {
                 long coordinates = message.LParam.ToInt64();
                 int marker = TodoAt(new Point((short)coordinates, (short)(coordinates >> 16)));
@@ -852,9 +806,16 @@ namespace PersonalStickyNote
             }
             if (id == 0x0215) pressedMarker = -1; // WM_CAPTURECHANGED
             base.WndProc(ref message);
-            if (id == 0x000f && IsHandleCreated) // WM_PAINT
+            if (imeComposing && (id == 0x010e || id == 0x0008)) // WM_IME_ENDCOMPOSITION / WM_KILLFOCUS
+            {
+                imeComposing = false;
+                Invalidate();
+                var ended = CompositionEnded;
+                if (ended != null) ended(this, EventArgs.Empty);
+            }
+            if (id == 0x000f && IsHandleCreated && !IsImeComposing) // WM_PAINT
                 using (var canvas = CreateGraphics()) PaintTodoBoxes(canvas);
-            if (id == 0x0318 && message.WParam != IntPtr.Zero) // WM_PRINTCLIENT
+            if (id == 0x0318 && message.WParam != IntPtr.Zero && !IsImeComposing) // WM_PRINTCLIENT
                 using (var canvas = Graphics.FromHdc(message.WParam)) PaintTodoBoxes(canvas);
         }
 
@@ -909,7 +870,8 @@ namespace PersonalStickyNote
 
         protected override bool ProcessCmdKey(ref Message message, Keys key)
         {
-            if (key == (Keys.Control | Keys.V))
+            if (IsImeComposing) return base.ProcessCmdKey(ref message, key);
+            if (key == (Keys.Control | Keys.V) || key == (Keys.Shift | Keys.Insert))
             {
                 PasteWithMarkdown(false);
                 return true;

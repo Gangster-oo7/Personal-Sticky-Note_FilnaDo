@@ -11,7 +11,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.5.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.5.1.0")]
 
 namespace PersonalStickyNote
 {
@@ -94,7 +94,6 @@ namespace PersonalStickyNote
         private bool closing;
         public Notebook Book { get; private set; }
         public bool Dark { get; private set; }
-        public NoteFonts Fonts { get; private set; }
         public AppUpdates Updates { get; private set; }
         public ShortcutMap Shortcuts { get; private set; }
 
@@ -103,7 +102,6 @@ namespace PersonalStickyNote
             this.store = store;
             Book = store.Load();
             Shortcuts = new ShortcutMap(Book);
-            Fonts = new NoteFonts(Path.Combine(store.DirectoryPath, "Fonts"));
             Dark = IsDark();
             list = new ListWindow(this);
             Updates = new AppUpdates(this, store.DirectoryPath);
@@ -339,6 +337,11 @@ namespace PersonalStickyNote
         private bool Save(bool interactive)
         {
             saveTimer.Stop();
+            if (!interactive && windows.Values.Any(window => window.IsImeComposing))
+            {
+                saveTimer.Start();
+                return false;
+            }
             foreach (var window in windows.Values) window.CaptureContent();
             list.RefreshNotes();
             if (!dirty) return true;
@@ -385,7 +388,6 @@ namespace PersonalStickyNote
                 foreach (var window in windows.Values) window.Dispose();
                 tray.Dispose();
                 list.Dispose();
-                Fonts.Dispose();
             }
             base.Dispose(disposing);
         }
