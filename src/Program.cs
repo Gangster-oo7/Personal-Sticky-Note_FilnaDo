@@ -10,7 +10,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.0.0.0")]
+[assembly: System.Reflection.AssemblyVersion("1.1.0.0")]
 
 namespace PersonalStickyNote
 {
@@ -22,18 +22,17 @@ namespace PersonalStickyNote
         private static extern bool SetProcessDPIAware();
 
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
             SetProcessDPIAware();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            bool acquired;
-            using (var instance = new Mutex(true, @"Local\PersonalStickyNote_FilnaDo", out acquired))
+            bool startup = args.Contains(DesktopIntegration.StartupArgument);
+            using (var instance = new Mutex(false, @"Local\PersonalStickyNote_FilnaDo"))
             {
-                if (!acquired)
+                if (!AcquireInstance(instance, startup))
                 {
-                    MessageBox.Show("个人便签已在运行，请从任务栏切换。", Name);
                     return;
                 }
                 try
@@ -41,7 +40,8 @@ namespace PersonalStickyNote
                     string directory = Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                         "PersonalStickyNote");
-                    using (var session = new NoteSession(new NoteStore(directory)))
+                    using (var session = new NoteSession(new NoteStore(directory), startup))
+                    using (var activation = new ListActivationWindow(() => session.ShowList()))
                         Application.Run(session);
                 }
                 catch (Exception error)
@@ -49,7 +49,22 @@ namespace PersonalStickyNote
                     MessageBox.Show("无法打开个人便签。\n\n" + error.Message,
                         Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
+                finally { instance.ReleaseMutex(); }
             }
+        }
+
+        private static bool AcquireInstance(Mutex instance, bool startup)
+        {
+            for (int attempt = 0; attempt < 20; attempt++)
+            {
+                try { if (instance.WaitOne(0)) return true; }
+                catch (AbandonedMutexException) { return true; }
+                if (startup || ListActivationWindow.RequestList()) return false;
+                Thread.Sleep(100);
+            }
+            MessageBox.Show("个人便签已在运行。请从任务栏切换。如果正在运行旧版，请先退出旧版。",
+                Name, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return false;
         }
     }
 
@@ -64,7 +79,7 @@ namespace PersonalStickyNote
         public Notebook Book { get; private set; }
         public bool Dark { get; private set; }
 
-        public NoteSession(NoteStore store)
+        public NoteSession(NoteStore store, bool startup = false)
         {
             this.store = store;
             Book = store.Load();
@@ -74,19 +89,38 @@ namespace PersonalStickyNote
             SystemEvents.UserPreferenceChanged += WindowsThemeChanged;
 
             var restore = Book.Notes.Where(note => note.Open).ToArray();
-            if (Book.ListVisible || restore.Length == 0 || store.Recovered) ShowList(false);
+            if (startup && (Book.ListVisible || restore.Length == 0 || store.Recovered)) ShowList(false);
             foreach (var note in restore) Open(note, false);
+            if (!startup) ShowList();
             if (store.Recovered)
                 MessageBox.Show(list, "已从上次保存的备份恢复便签。", Program.Name);
         }
 
-        public void NewNote()
+        public void NewNote(Guid groupId = default(Guid))
         {
-            var note = new Note();
+            var note = new Note { GroupId = groupId };
             Book.Notes.Add(note);
             Open(note);
             Changed();
             list.RefreshNotes();
+        }
+
+        public void Move(Note note, Guid groupId)
+        {
+            if (note.GroupId == groupId) return;
+            note.GroupId = groupId;
+            note.Updated = DateTime.UtcNow;
+            Changed();
+            list.RefreshNotes();
+        }
+
+        public void RemoveGroup(NoteGroup group)
+        {
+            Book.Groups.Remove(group);
+            foreach (var note in Book.Notes.Where(note => note.GroupId == group.Id))
+                note.GroupId = Guid.Empty;
+            Changed();
+            list.RefreshGroups(null);
         }
 
         public void Open(Note note, bool activate = true)
@@ -114,6 +148,7 @@ namespace PersonalStickyNote
 
         public void ShowList(bool activate = true)
         {
+            if (closing) return;
             if (!Book.ListVisible)
             {
                 Book.ListVisible = true;

@@ -14,8 +14,17 @@ namespace PersonalStickyNote
         public string Color = "yellow";
         public bool Pinned;
         public bool Open;
+        public Guid GroupId;
         public WindowPosition Position = new WindowPosition();
         public DateTime Updated = DateTime.UtcNow;
+    }
+
+    public sealed class NoteGroup
+    {
+        public Guid Id = Guid.NewGuid();
+        public string Name = "";
+
+        public override string ToString() { return Name; }
     }
 
     public sealed class WindowPosition
@@ -33,6 +42,7 @@ namespace PersonalStickyNote
         public bool ListVisible = true;
         public WindowPosition ListPosition = new WindowPosition();
         public List<Note> Notes = new List<Note>();
+        public List<NoteGroup> Groups = new List<NoteGroup>();
     }
 
     internal sealed class NoteStore
