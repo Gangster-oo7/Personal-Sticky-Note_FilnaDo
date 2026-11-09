@@ -124,7 +124,7 @@ namespace PersonalStickyNote
 
         public void ApplyLanguage()
         {
-            Text = L.T("个人便签·便笺");
+            RefreshTitle();
             toolbar.AccessibleName = L.T("便笺编辑工具");
             editor.AccessibleName = L.T("便笺正文");
             foreach (ToolStripButton button in toolbar.Items)
@@ -133,6 +133,11 @@ namespace PersonalStickyNote
             RefreshShortcutLabels();
             RefreshSnap();
             InstallEditorMenu();
+        }
+
+        public void RefreshTitle()
+        {
+            Text = string.IsNullOrWhiteSpace(Note.Title) ? L.T("便笺|窗口标题") : Note.Title;
         }
 
         private void RefreshSnap()
@@ -270,7 +275,7 @@ namespace PersonalStickyNote
         private void OpenMenu()
         {
             var menu = new ContextMenuStrip();
-            menu.Items.Add(Note.Title.Length == 0 ? L.T("命名便笺…") : L.T("重命名便笺…"), null,
+            menu.Items.Add(string.IsNullOrWhiteSpace(Note.Title) ? L.T("命名便笺…") : L.T("重命名便笺…"), null,
                 (sender, args) => session.Rename(Note, this));
             menu.Items.Add(L.T("手写或涂画"), null, (sender, args) => Sketch());
             menu.Items.Add(L.T("便笺列表"), null, (sender, args) => session.ShowList());

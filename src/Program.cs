@@ -11,7 +11,7 @@ using Timer = System.Windows.Forms.Timer;
 
 [assembly: System.Reflection.AssemblyTitle("个人便签")]
 [assembly: System.Reflection.AssemblyProduct("个人便签")]
-[assembly: System.Reflection.AssemblyVersion("1.0.3.0")]
+[assembly: System.Reflection.AssemblyVersion("1.0.4.0")]
 
 namespace PersonalStickyNote
 {
@@ -303,6 +303,8 @@ namespace PersonalStickyNote
             if (title == null || title == note.Title) return;
             note.Title = title;
             note.Updated = DateTime.UtcNow;
+            NoteWindow window;
+            if (windows.TryGetValue(note.Id, out window)) window.RefreshTitle();
             Changed();
             list.RefreshNotes();
         }

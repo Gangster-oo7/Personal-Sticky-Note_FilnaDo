@@ -7,7 +7,7 @@ namespace PersonalStickyNote
 {
     internal static class L
     {
-        // These columns match the order in Strings.tsv. The first column is also the Chinese text.
+        // These columns match Strings.tsv. The first column is the Chinese text, with an optional |context.
         public static readonly string[] Codes = { "zh", "en", "fr", "es", "ja", "ko" };
         public static readonly string[] Names = { "简体中文", "English", "Français", "Español", "日本語", "한국어" };
         public const string SystemLanguage = "system";
@@ -57,7 +57,10 @@ namespace PersonalStickyNote
                     var row = line.Split('\t');
                     if (row.Length != Codes.Length) throw new InvalidDataException("Invalid translation row: " + line);
                     for (int i = 0; i < row.Length; i++) row[i] = row[i].Replace(@"\n", "\n");
-                    strings.Add(row[0], row);
+                    string key = row[0];
+                    int context = key.IndexOf('|');
+                    if (context >= 0) row[0] = key.Substring(0, context);
+                    strings.Add(key, row);
                 }
             }
             return strings;
