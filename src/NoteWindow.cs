@@ -646,6 +646,8 @@ namespace PersonalStickyNote
             RegexOptions.Multiline | RegexOptions.CultureInvariant);
         private string paragraphs;
         private int pressedMarker = -1;
+        private int? activationScroll;
+        private int inactiveWheelRemainder;
 
         private string Paragraphs { get { return paragraphs ?? (paragraphs = Text); } }
 
@@ -808,13 +810,7 @@ namespace PersonalStickyNote
             }
             finally
             {
-                if (VerticalScrollPosition() != scroll)
-                {
-                    // SB_THUMBPOSITION accepts Rich Edit's scaled scrollbar position for long documents.
-                    const int verticalScroll = 0x0115; // WM_VSCROLL
-                    const int thumbPosition = 4;
-                    SendMessage(Handle, verticalScroll, new IntPtr(thumbPosition | (scroll << 16)), IntPtr.Zero);
-                }
+                RestoreVerticalScrollPosition(scroll);
                 if (redraw)
                 {
                     SendMessage(Handle, setRedraw, new IntPtr(1), IntPtr.Zero);
@@ -828,6 +824,15 @@ namespace PersonalStickyNote
             var point = Point.Empty;
             SendMessage(Handle, 0x04dd, IntPtr.Zero, ref point); // EM_GETSCROLLPOS
             return point.Y;
+        }
+
+        private void RestoreVerticalScrollPosition(int scroll)
+        {
+            if (VerticalScrollPosition() == scroll) return;
+            // SB_THUMBPOSITION accepts Rich Edit's scaled scrollbar position for long documents.
+            const int verticalScroll = 0x0115; // WM_VSCROLL
+            const int thumbPosition = 4;
+            SendMessage(Handle, verticalScroll, new IntPtr(thumbPosition | (scroll << 16)), IntPtr.Zero);
         }
 
         internal static string ConvertMarkdownTasks(string input, bool includeFirstLine)
@@ -929,20 +934,80 @@ namespace PersonalStickyNote
             return point;
         }
 
+        private void ScrollInactiveNote(short delta)
+        {
+            const int wheelDelta = 120;
+            int accumulated = inactiveWheelRemainder - delta;
+            int steps = accumulated / wheelDelta;
+            inactiveWheelRemainder = accumulated % wheelDelta;
+            if (steps == 0) return;
+
+            int lines = SystemInformation.MouseWheelScrollLines;
+            if (lines == -1)
+            {
+                var page = new IntPtr(steps > 0 ? 3 : 2); // SB_PAGEDOWN / SB_PAGEUP
+                for (int i = 0; i < Math.Abs(steps); i++)
+                    SendMessage(Handle, 0x0115, page, IntPtr.Zero); // WM_VSCROLL
+            }
+            else if (lines > 0)
+                SendMessage(Handle, 0x00b6, IntPtr.Zero, new IntPtr(steps * lines)); // EM_LINESCROLL
+        }
+
         protected override void WndProc(ref Message message)
         {
             int id = message.Msg;
+            const int selectionModifiers = 0x000c; // MK_SHIFT | MK_CONTROL
+            if (id == 0x020a && (message.WParam.ToInt64() & selectionModifiers) == 0) // WM_MOUSEWHEEL
+            {
+                var note = FindForm();
+                if (note != null && !note.ContainsFocus && !IsImeComposing)
+                {
+                    // Finish the scroll now so an animation cannot continue after the note is clicked.
+                    ScrollInactiveNote((short)(message.WParam.ToInt64() >> 16));
+                    message.Result = IntPtr.Zero;
+                    return;
+                }
+            }
+            if (id == 0x0007) inactiveWheelRemainder = 0; // WM_SETFOCUS
+            if (id == 0x0021) // WM_MOUSEACTIVATE arrives before focus moves to the clicked note.
+            {
+                long hit = message.LParam.ToInt64();
+                activationScroll = null;
+                if ((hit & 0xffff) == 1 && (hit >> 16) == 0x0201 && !IsImeComposing)
+                {
+                    if (TodoAt(PointToClient(Cursor.Position)) >= 0)
+                    {
+                        message.Result = new IntPtr(3); // MA_NOACTIVATE still delivers the click.
+                        return;
+                    }
+                    activationScroll = VerticalScrollPosition();
+                }
+            }
             if (id == 0x010d) imeComposing = true; // WM_IME_STARTCOMPOSITION
             if (!IsImeComposing && (id == 0x0201 || id == 0x0202 || id == 0x0203)) // WM_LBUTTONDOWN, UP, DBLCLK
             {
                 long coordinates = message.LParam.ToInt64();
-                int marker = TodoAt(new Point((short)coordinates, (short)(coordinates >> 16)));
+                var point = new Point((short)coordinates, (short)(coordinates >> 16));
+                int? scroll = id == 0x0201 ? activationScroll : null;
+                if (id == 0x0201) activationScroll = null;
+                if (scroll.HasValue)
+                {
+                    if (!Focused) Focus();
+                    RestoreVerticalScrollPosition(scroll.Value);
+                }
+                int marker = TodoAt(point);
                 if (id == 0x0201 && marker >= 0)
                 {
-                    Focus();
                     pressedMarker = marker;
                     Capture = true;
                     return;
+                }
+                if (scroll.HasValue && (message.WParam.ToInt64() & selectionModifiers) == 0)
+                {
+                    // The first native click can keep the old caret after an inactive scroll.
+                    int caret = SendMessage(Handle, 0x00d7, IntPtr.Zero, ref point).ToInt32(); // EM_CHARFROMPOS
+                    if (caret >= 0) Select(caret, 0);
+                    RestoreVerticalScrollPosition(scroll.Value);
                 }
                 if (id == 0x0202 && pressedMarker >= 0)
                 {
@@ -955,6 +1020,7 @@ namespace PersonalStickyNote
                 if (id == 0x0203 && marker >= 0) return;
             }
             if (id == 0x0215) pressedMarker = -1; // WM_CAPTURECHANGED
+            if (id == 0x001f || id == 0x0008) activationScroll = null; // WM_CANCELMODE / WM_KILLFOCUS
             base.WndProc(ref message);
             if (imeComposing && (id == 0x010e || id == 0x0008)) // WM_IME_ENDCOMPOSITION / WM_KILLFOCUS
             {
