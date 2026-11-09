@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -640,8 +641,7 @@ namespace PersonalStickyNote
 
         private const char OpenBox = '☐';
         private const char CheckedBox = '☑';
-        private const char TaskSpacer = '\u2002';
-        private const int StyledMarkerLength = 3;
+        private const int TaskMarkerLength = 2;
         private static readonly Regex MarkdownMarker = new Regex(@"^ {0,3}[-+*][ \t]+\[([ xX])\](?:[ \t]+|$)",
             RegexOptions.Multiline | RegexOptions.CultureInvariant);
         private string paragraphs;
@@ -668,10 +668,17 @@ namespace PersonalStickyNote
 
         private static int MarkerLength(string text, int start)
         {
-            return start + 2 < text.Length && text[start + 2] == TaskSpacer ? StyledMarkerLength : 2;
+            return SkipTaskPadding(text, start + TaskMarkerLength) - start;
         }
 
-        private static string TaskPrefix(char marker) { return marker + " " + TaskSpacer; }
+        private static int SkipTaskPadding(string text, int index)
+        {
+            while (index < text.Length && (text[index] == '\t' ||
+                char.GetUnicodeCategory(text[index]) == UnicodeCategory.SpaceSeparator)) index++;
+            return index;
+        }
+
+        private static string TaskPrefix(char marker) { return marker + " "; }
 
         private bool NormalizeTaskMarker(int index, char marker)
         {
@@ -727,23 +734,24 @@ namespace PersonalStickyNote
         public bool NormalizeTodoSpacing()
         {
             string text = Paragraphs;
-            var missing = new System.Collections.Generic.List<int>();
+            var padded = new System.Collections.Generic.List<int>();
             for (int start = 0; start < text.Length;)
             {
-                if (IsTodo(text, start) && MarkerLength(text, start) == 2) missing.Add(start + 2);
+                if (IsTodo(text, start) && MarkerLength(text, start) > TaskMarkerLength) padded.Add(start);
                 int end = text.IndexOf('\n', start);
                 if (end < 0) break;
                 start = end + 1;
             }
-            if (missing.Count == 0) return false;
+            if (padded.Count == 0) return false;
             int selectionStart = SelectionStart, selectionEnd = selectionStart + SelectionLength;
-            for (int i = missing.Count - 1; i >= 0; i--)
+            for (int i = padded.Count - 1; i >= 0; i--)
             {
-                int position = missing[i];
-                Select(position, 0);
-                SelectedText = TaskSpacer.ToString();
-                if (selectionStart >= position) selectionStart++;
-                if (selectionEnd >= position) selectionEnd++;
+                int position = padded[i] + TaskMarkerLength;
+                int length = MarkerLength(text, padded[i]) - TaskMarkerLength;
+                Select(position, length);
+                SelectedText = "";
+                selectionStart = MoveSelection(selectionStart, position, length, 0);
+                selectionEnd = MoveSelection(selectionEnd, position, length, 0);
             }
             Select(selectionStart, selectionEnd - selectionStart);
             return true;
@@ -762,22 +770,23 @@ namespace PersonalStickyNote
             {
                 int start = lines[i];
                 if (!remove && IsTodo(text, start)) continue;
-                int length = remove ? MarkerLength(text, start) : StyledMarkerLength;
-                Select(start, remove ? length : 0);
+                int removed = remove ? MarkerLength(text, start) : SkipTaskPadding(text, start) - start;
+                int inserted = remove ? 0 : TaskMarkerLength;
+                Select(start, removed);
                 if (!remove && SelectionBullet) SelectionBullet = false;
                 if (remove) SelectedText = "";
                 else InsertTaskText(TaskPrefix(OpenBox), true);
-                selectionStart = MoveSelection(selectionStart, start, length, remove);
-                selectionEnd = MoveSelection(selectionEnd, start, length, remove);
+                selectionStart = MoveSelection(selectionStart, start, removed, inserted);
+                selectionEnd = MoveSelection(selectionEnd, start, removed, inserted);
             }
             Select(selectionStart, selectionEnd - selectionStart);
             if (remove && selectionStart == selectionEnd) SetBodyFont(1);
         }
 
-        private static int MoveSelection(int offset, int start, int length, bool remove)
+        private static int MoveSelection(int offset, int start, int removed, int inserted)
         {
             if (offset < start) return offset;
-            return remove ? Math.Max(start, offset - length) : offset + length;
+            return Math.Max(start, offset - removed) + inserted;
         }
 
         public void ToggleCurrentTodo() { ToggleTodo(LineStart(Paragraphs, SelectionStart)); }
@@ -840,6 +849,7 @@ namespace PersonalStickyNote
                     if (forceText || converted != text.Replace("\r\n", "\n").Replace('\r', '\n'))
                     {
                         InsertTaskText(converted, atStart);
+                        NormalizeTodoSpacing();
                         return;
                     }
                 }
@@ -984,7 +994,8 @@ namespace PersonalStickyNote
                     }
                     if (key == Keys.Enter)
                     {
-                        if (caret < content) Select(content, 0);
+                        int split = Math.Max(caret, content);
+                        Select(split, SkipTaskPadding(text, split) - split);
                         InsertTaskText("\n" + TaskPrefix(OpenBox), false);
                         return true;
                     }
