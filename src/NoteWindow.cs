@@ -529,6 +529,8 @@ namespace PersonalStickyNote
         private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, IntPtr value);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)]
         private static extern IntPtr SendMessage(IntPtr window, int message, ref Point point, IntPtr index);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr SendMessage(IntPtr window, int message, IntPtr flags, ref Point point);
 
         private const int GetCharacterFormat = 0x0400 + 58;
         private const int SetCharacterFormat = 0x0400 + 68;
@@ -785,9 +787,38 @@ namespace PersonalStickyNote
             var text = Paragraphs;
             if (!IsTodo(text, index)) return;
             int start = SelectionStart, length = SelectionLength;
-            Select(index, 1);
-            ReplaceWithTaskRtf(MarkerRtf(text[index] == OpenBox ? CheckedBox : OpenBox), GetFormat());
-            Select(start, length);
+            int scroll = VerticalScrollPosition();
+            const int setRedraw = 0x000b; // WM_SETREDRAW
+            bool redraw = Visible;
+            if (redraw) SendMessage(Handle, setRedraw, IntPtr.Zero, IntPtr.Zero);
+            try
+            {
+                Select(index, 1);
+                ReplaceWithTaskRtf(MarkerRtf(text[index] == OpenBox ? CheckedBox : OpenBox), GetFormat());
+                Select(start, length);
+            }
+            finally
+            {
+                if (VerticalScrollPosition() != scroll)
+                {
+                    // SB_THUMBPOSITION accepts Rich Edit's scaled scrollbar position for long documents.
+                    const int verticalScroll = 0x0115; // WM_VSCROLL
+                    const int thumbPosition = 4;
+                    SendMessage(Handle, verticalScroll, new IntPtr(thumbPosition | (scroll << 16)), IntPtr.Zero);
+                }
+                if (redraw)
+                {
+                    SendMessage(Handle, setRedraw, new IntPtr(1), IntPtr.Zero);
+                    Invalidate();
+                }
+            }
+        }
+
+        private int VerticalScrollPosition()
+        {
+            var point = Point.Empty;
+            SendMessage(Handle, 0x04dd, IntPtr.Zero, ref point); // EM_GETSCROLLPOS
+            return point.Y;
         }
 
         internal static string ConvertMarkdownTasks(string input, bool includeFirstLine)
